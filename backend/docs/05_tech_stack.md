@@ -10,6 +10,8 @@
 | Validation | Pydantic v2 | FastAPI 기본 통합 |
 | 파일 저장 | 로컬 파일시스템 (학기 프로젝트 범위) | 배포 환경에 따라 S3 호환 스토리지로 전환 가능하도록 경로를 서비스 계층에서 추상화 |
 | Vector DB | Chroma 또는 FAISS (AI 파트와 5주차 확정) | 로컬 실행 가능, 별도 서버 불필요 |
+| 인증 | JWT (python-jose 또는 pyjwt) | `POST /auth/login`에서 발급, `Authorization: Bearer` 검증 (6주차 구현) |
+| SSE 스트리밍 | FastAPI `StreamingResponse` (`media_type="text/event-stream"`) | 챗봇 답변 스트리밍, 추가 라이브러리 불필요 |
 | 로컬 실행 하네스 | Docker Compose (api + db) | 개발 단계부터 팀원 전원이 동일 환경에서 실행/테스트하기 위해 4주차에 조기 구성 |
 | 테스트 하네스 | pytest + FastAPI TestClient | 6주차 구현 시작 전 라우트/모델 골격을 미리 검증 |
 | 배포(안) | Docker Compose 이미지를 기반으로 확장 | 14~15주차 최종 배포 단계에서 세부 확정 |

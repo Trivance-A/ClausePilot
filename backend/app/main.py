@@ -1,13 +1,25 @@
 from fastapi import FastAPI
 
-from app.api import chat, documents, guarantee_applications, regulations
+from app.api import admin, auth, chat, documents, eval, extractions, guarantee, highlights, regulations, risks, search
 
-app = FastAPI(title="AI 계약서 검증 및 규정 챗봇 시스템 API")
+app = FastAPI(title="ClausePilot API")
 
-app.include_router(documents.router)
-app.include_router(guarantee_applications.router)
-app.include_router(regulations.router)
-app.include_router(chat.router)
+API_PREFIX = "/api/v1"
+
+for router in (
+    auth.router,
+    documents.router,
+    extractions.router,
+    highlights.router,
+    risks.router,
+    guarantee.router,
+    regulations.router,
+    search.router,
+    chat.router,
+    admin.router,
+    eval.router,
+):
+    app.include_router(router, prefix=API_PREFIX)
 
 
 @app.get("/health")

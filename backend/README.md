@@ -9,6 +9,10 @@ AI 기반 계약서 검증 및 규정 챗봇 시스템의 Backend·Data 파트 �
 구체화합니다. 실제 구현(코딩)은 6주차부터 시작하므로, 이번 주 산출물은
 **설계 문서 + DB/API 스펙 + 프로젝트 골격(스텁)** 입니다.
 
+> **2차 개정**: `../front 폴더`에 이미 구현된 프론트엔드(React + TanStack Query + MSW 목 서버)가
+> 있어, 이 프론트가 기대하는 실제 API 계약(`front 폴더/src/types/api.ts`, `src/mocks/handlers.ts`)에
+> 맞춰 DB/API 설계를 다시 정렬했습니다. 각 설계 문서에 "1차 설계 대비 변경 사항"을 남겨뒀습니다.
+
 ## 기술 스택 (4주차 결정)
 
 - **Framework**: FastAPI (Python)
@@ -71,14 +75,16 @@ pip install -r requirements-dev.txt
 pytest          # 또는: make test
 ```
 
-4주차 시점 테스트는 실제 DB 없이도 동작하도록 설계했습니다:
-- `tests/test_*.py` (documents/regulations/chat/guarantee_applications): 스텁 라우트가 올바르게
-  등록되어 있는지, 요청 스키마 검증(422)이 동작하는지 확인 (현재는 501을 기대값으로 검증 — 6주차에
-  실제 로직이 채워지면 실제 동작/응답 스키마 검증으로 교체해야 함)
+4주차 시점 테스트는 실제 DB 없이도 동작하도록 설계했습니다 (총 52개):
+- `tests/test_*.py` (auth/documents/extractions/highlights/risks/guarantee/regulations/search/chat/admin/eval):
+  스텁 라우트가 올바르게 등록되어 있는지, 요청 스키마 검증(422)이 동작하는지 확인 (현재는 501을
+  기대값으로 검증 — 6주차에 실제 로직이 채워지면 실제 동작/응답 스키마 검증으로 교체해야 함)
 - `tests/test_models.py`: SQLAlchemy 모델/관계 설정에 오류(FK 오타 등)가 없는지 DB 연결 없이 정적 검증
 
 ## 참고 자료
 
+- `../front 폴더/` — 실제 구현된 프론트엔드. `src/types/api.ts`, `src/mocks/handlers.ts`가 사실상
+  가장 정확한 API 명세(구현 시 최우선 참고 대상)
 - `../대본.docx` — 발표 대본 (프로젝트 목표, 15주 계획, 성능 목표 근거)
 - `../발표자료.pdf` — 발표 슬라이드 (시스템 구성도 등)
 - `../제안요청서_AI보증신청 및 챗봇 시스템 개발.hwp` — 원본 RFP

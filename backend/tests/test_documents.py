@@ -4,32 +4,74 @@
 
 import uuid
 
+BASE = "/api/v1/documents"
 
-def test_upload_document_route_exists(client):
-    response = client.post("/documents", files={"file": ("test.pdf", b"%PDF-1.4", "application/pdf")})
+
+def test_list_documents_route_exists(client):
+    response = client.get(BASE, params={"q": "계약", "status": "OCR,EXTRACTING", "page": 1, "size": 20})
+
+    assert response.status_code == 501
+
+
+def test_upload_documents_route_exists(client):
+    response = client.post(
+        BASE,
+        files=[("files", ("test.pdf", b"%PDF-1.4", "application/pdf"))],
+        data={"ocr_engine": "auto", "skip_risk": "false"},
+    )
 
     assert response.status_code == 501
 
 
 def test_get_document_status_route_exists(client):
-    response = client.get(f"/documents/{uuid.uuid4()}/status")
+    response = client.get(f"{BASE}/{uuid.uuid4()}/status")
 
     assert response.status_code == 501
 
 
-def test_get_document_result_route_exists(client):
-    response = client.get(f"/documents/{uuid.uuid4()}/result")
+def test_get_document_pdf_route_exists(client):
+    response = client.get(f"{BASE}/{uuid.uuid4()}/pdf")
 
     assert response.status_code == 501
 
 
-def test_get_document_ocr_blocks_route_exists(client):
-    response = client.get(f"/documents/{uuid.uuid4()}/ocr-blocks")
+def test_export_document_pdf_route_exists(client):
+    response = client.get(f"{BASE}/{uuid.uuid4()}/export/pdf")
+
+    assert response.status_code == 501
+
+
+def test_get_document_lines_route_exists(client):
+    response = client.get(f"{BASE}/{uuid.uuid4()}/lines", params={"page": 1})
+
+    assert response.status_code == 501
+
+
+def test_get_document_lines_requires_page(client):
+    response = client.get(f"{BASE}/{uuid.uuid4()}/lines")
+
+    assert response.status_code == 422
+
+
+def test_get_document_route_exists(client):
+    response = client.get(f"{BASE}/{uuid.uuid4()}")
+
+    assert response.status_code == 501
+
+
+def test_reprocess_document_route_exists(client):
+    response = client.post(f"{BASE}/{uuid.uuid4()}/reprocess", json={"from_step": "ocr"})
+
+    assert response.status_code == 501
+
+
+def test_delete_document_route_exists(client):
+    response = client.delete(f"{BASE}/{uuid.uuid4()}")
 
     assert response.status_code == 501
 
 
 def test_get_document_status_rejects_invalid_uuid(client):
-    response = client.get("/documents/not-a-uuid/status")
+    response = client.get(f"{BASE}/not-a-uuid/status")
 
     assert response.status_code == 422

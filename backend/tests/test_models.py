@@ -4,18 +4,36 @@ DDL을 실제로 실행하지는 않는다 (JSONB 등 Postgres 전용 타입은 
 from sqlalchemy.orm import configure_mappers
 
 from app.db.session import Base
-from app.models import chat, document, regulation  # noqa: F401 (모델 등록을 위해 import)
+from app.models import (  # noqa: F401 (모델 등록을 위해 import)
+    chat,
+    document,
+    eval,
+    extraction,
+    guarantee,
+    highlight,
+    job,
+    regulation,
+    risk,
+    user,
+)
 
 EXPECTED_TABLES = {
+    "users",
     "documents",
-    "ocr_blocks",
-    "extracted_fields",
-    "risk_flags",
+    "pages",
+    "ocr_lines",
+    "extractions",
+    "extraction_fields",
+    "highlights",
+    "risk_findings",
     "guarantee_applications",
     "regulations",
+    "regulation_nodes",
     "regulation_chunks",
     "chat_sessions",
     "chat_messages",
+    "jobs",
+    "eval_runs",
 }
 
 
