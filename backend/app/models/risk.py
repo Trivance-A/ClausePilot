@@ -16,7 +16,7 @@ class RiskFinding(Base):
     __tablename__ = "risk_findings"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     category: Mapped[str] = mapped_column(String)
     severity: Mapped[str] = mapped_column(String)
     score: Mapped[float] = mapped_column(Float)

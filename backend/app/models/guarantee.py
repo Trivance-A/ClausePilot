@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.time import utcnow
 from app.db.session import Base
 
 
@@ -17,11 +18,11 @@ class GuaranteeApplication(Base):
     __tablename__ = "guarantee_applications"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     guarantee_type: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, default="DRAFT")
     form_values: Mapped[dict] = mapped_column(JSONB)
     field_sources: Mapped[dict] = mapped_column(JSONB, default=dict)
     required_fields: Mapped[list] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

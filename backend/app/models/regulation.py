@@ -5,6 +5,7 @@ from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.time import utcnow
 from app.db.session import Base
 
 
@@ -23,7 +24,7 @@ class Regulation(Base):
     chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     error: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     nodes: Mapped[list["RegulationNode"]] = relationship(back_populates="regulation")
     chunks: Mapped[list["RegulationChunk"]] = relationship(back_populates="regulation")
@@ -37,7 +38,7 @@ class RegulationNode(Base):
     __tablename__ = "regulation_nodes"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    regulation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("regulations.id"))
+    regulation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("regulations.id", ondelete="CASCADE"))
     parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("regulation_nodes.id"), nullable=True)
     level: Mapped[str] = mapped_column(String)
     number: Mapped[str] = mapped_column(String)
@@ -58,7 +59,7 @@ class RegulationChunk(Base):
     __tablename__ = "regulation_chunks"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    regulation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("regulations.id"))
+    regulation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("regulations.id", ondelete="CASCADE"))
     node_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("regulation_nodes.id"), nullable=True)
     content: Mapped[str] = mapped_column(Text)
     embedding_ref: Mapped[str | None] = mapped_column(String, nullable=True)

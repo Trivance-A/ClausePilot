@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.time import utcnow
 from app.db.session import Base
 
 
@@ -17,8 +18,8 @@ class ChatSession(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     regulation_ids: Mapped[list] = mapped_column(JSONB, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     messages: Mapped[list["ChatMessage"]] = relationship(back_populates="session")
 
@@ -31,7 +32,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_sessions.id"))
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(Text)
     answer_status: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -39,6 +40,6 @@ class ChatMessage(Base):
     suggestions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     feedback: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     session: Mapped["ChatSession"] = relationship(back_populates="messages")

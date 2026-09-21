@@ -1,4 +1,4 @@
-.PHONY: up down build logs test
+.PHONY: up down build logs test migrate
 
 up:
 	docker compose up --build
@@ -13,4 +13,8 @@ logs:
 	docker compose logs -f api
 
 test:
+	docker compose up -d db
 	pytest
+
+migrate:
+	alembic upgrade head

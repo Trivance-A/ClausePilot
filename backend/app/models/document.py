@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.time import utcnow
 from app.db.session import Base
 
 
@@ -19,14 +20,15 @@ class Document(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     original_name: Mapped[str] = mapped_column(String)
     original_format: Mapped[str] = mapped_column(String)  # hwp / hwpx / pdf / xlsx / ...
+    original_path: Mapped[str] = mapped_column(String)  # 업로드된 원본 파일 저장 경로
     source_type: Mapped[str | None] = mapped_column(String, nullable=True)
     normalized_pdf_path: Mapped[str | None] = mapped_column(String, nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String, default="UPLOADED")
     failure_step: Mapped[str | None] = mapped_column(String, nullable=True)  # normalize/ocr/extract/risk 중 실패 단계
     failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     pages: Mapped[list["Page"]] = relationship(back_populates="document")
     ocr_lines: Mapped[list["OcrLine"]] = relationship(back_populates="document")
@@ -36,7 +38,7 @@ class Page(Base):
     __tablename__ = "pages"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     page_no: Mapped[int] = mapped_column(Integer)
     width_pt: Mapped[float] = mapped_column(Float)
     height_pt: Mapped[float] = mapped_column(Float)
@@ -52,7 +54,7 @@ class OcrLine(Base):
     __tablename__ = "ocr_lines"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     page_no: Mapped[int] = mapped_column(Integer)
     line_id: Mapped[str] = mapped_column(String)  # 예: "L1-2" (페이지 내 순번 기반, 프론트/하이라이트가 참조)
     text: Mapped[str] = mapped_column(String)

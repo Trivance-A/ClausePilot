@@ -1,39 +1,170 @@
+import json
+import time
 import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from starlette.responses import StreamingResponse
 
-from app.schemas.chat import ChatMessage, ChatSession, CreateChatSessionRequest, CreateChatSessionResponse, FeedbackRequest, SendMessageRequest
+from app.core.deps import get_current_user
+from app.core.errors import ApiError
+from app.db.session import SessionLocal, get_db
+from app.models.chat import ChatMessage, ChatSession
+from app.models.regulation import Regulation, RegulationNode
+from app.models.user import User
+from app.schemas.chat import (
+    ChatMessage as ChatMessageOut,
+)
+from app.schemas.chat import (
+    ChatSession as ChatSessionOut,
+)
+from app.schemas.chat import (
+    CreateChatSessionRequest,
+    CreateChatSessionResponse,
+    FeedbackRequest,
+    SendMessageRequest,
+)
+from app.services import ai_client as ai
+from app.services.search import search as run_search
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-
-@router.get("/sessions")
-async def list_chat_sessions() -> dict[str, list[ChatSession]]:
-    raise HTTPException(status_code=501, detail="구현 대기 (6주차)")
+NOT_FOUND_TEXT = "관련 규정을 찾지 못했습니다."
 
 
-@router.post("/sessions", response_model=CreateChatSessionResponse, status_code=201)
-async def create_chat_session(payload: CreateChatSessionRequest):
-    raise HTTPException(status_code=501, detail="구현 대기 (6주차)")
+def _session_out(s: ChatSession) -> ChatSessionOut:
+    return ChatSessionOut(session_id=s.id, title=s.title, regulation_ids=[uuid.UUID(r) for r in s.regulation_ids], created_at=s.created_at, last_active_at=s.last_active_at)
 
 
-@router.get("/sessions/{session_id}/messages")
-async def list_chat_messages(session_id: uuid.UUID) -> dict[str, list[ChatMessage]]:
-    raise HTTPException(status_code=501, detail="구현 대기 (6주차)")
-
-
-@router.post("/sessions/{session_id}/messages")
-async def post_chat_message(session_id: uuid.UUID, payload: SendMessageRequest) -> Response:
-    """stream=false: ChatMessage JSON 단건 응답.
-    stream=true(기본값): text/event-stream, event 순서는 status(rewrite) → status(retrieve) →
-    token* → citation* → done. 이벤트 형식은 app/schemas/chat.py의 Sse*Data 참고.
-    """
-    raise HTTPException(
-        status_code=501,
-        detail="구현 대기 (6주차): RAG 검색 + LLM 답변생성. 근거 청크 없으면 answer_status=NOT_FOUND",
+def _message_out(m: ChatMessage) -> ChatMessageOut:
+    return ChatMessageOut(
+        id=m.id, role=m.role, content=m.content, created_at=m.created_at, answer_status=m.answer_status,
+        citations=m.citations if m.role == "assistant" else None, suggestions=m.suggestions, latency_ms=m.latency_ms, feedback=m.feedback,
     )
 
 
+@router.get("/sessions")
+async def list_chat_sessions(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict[str, list[ChatSessionOut]]:
+    sessions = db.query(ChatSession).filter(ChatSession.owner_id == user.id).order_by(ChatSession.last_active_at.desc()).all()
+    return {"items": [_session_out(s) for s in sessions]}
+
+
+@router.post("/sessions", response_model=CreateChatSessionResponse, status_code=201)
+async def create_chat_session(payload: CreateChatSessionRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    session = ChatSession(owner_id=user.id, title=payload.title, regulation_ids=[str(r) for r in payload.regulation_ids])
+    db.add(session)
+    db.commit()
+    return CreateChatSessionResponse(session_id=session.id)
+
+
+def _get_session_or_404(db: Session, session_id: uuid.UUID, user: User) -> ChatSession:
+    session = db.get(ChatSession, session_id)
+    if not session:
+        raise ApiError(404, "NOT_FOUND", "채팅 세션을 찾을 수 없습니다")
+    if session.owner_id != user.id:
+        raise ApiError(403, "FORBIDDEN", "본인의 세션만 조회할 수 있습니다")
+    return session
+
+
+@router.get("/sessions/{session_id}/messages")
+async def list_chat_messages(session_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict[str, list[ChatMessageOut]]:
+    _get_session_or_404(db, session_id, user)
+    messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
+    return {"items": [_message_out(m) for m in messages]}
+
+
+def _suggestions(db: Session, regulation_ids: list[str]) -> list[dict]:
+    q = db.query(RegulationNode).join(Regulation, RegulationNode.regulation_id == Regulation.id).filter(Regulation.status == "INDEXED", RegulationNode.level == "article")
+    if regulation_ids:
+        q = q.filter(RegulationNode.regulation_id.in_(regulation_ids))
+    nodes = q.limit(3).all()
+    return [{"path": n.path, "title": n.title or n.path, "regulation_id": str(n.regulation_id), "node_id": str(n.id)} for n in nodes]
+
+
+@router.post("/sessions/{session_id}/messages")
+async def post_chat_message(session_id: uuid.UUID, payload: SendMessageRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    session = _get_session_or_404(db, session_id, user)
+    now = datetime.now(timezone.utc)
+    db.add(ChatMessage(session_id=session_id, role="user", content=payload.content, created_at=now))
+    session.last_active_at = now
+    if not session.title:
+        session.title = payload.content[:20]
+    db.commit()
+
+    regulation_ids = session.regulation_ids or None
+    started = time.monotonic()
+    results = run_search(db, payload.content, regulation_ids, top_k=5)
+    has_results = bool(results) and (results[0]["bm25_score"] > 0 or results[0]["vector_score"] > 0)
+
+    if not payload.stream:
+        message_id = uuid.uuid4()
+        if not has_results:
+            content, citations, suggestions, status = NOT_FOUND_TEXT, [], _suggestions(db, session.regulation_ids), "NOT_FOUND"
+        else:
+            citations = []
+            content = ""
+            async for event in ai.generate_answer_stream(payload.content, results, message_id):
+                if event["event"] == "citation":
+                    citations.append(event["data"])
+                elif event["event"] == "done":
+                    content = event["data"]["content"]
+            suggestions, status = None, "ANSWERED"
+        latency_ms = int((time.monotonic() - started) * 1000)
+        db.add(ChatMessage(id=message_id, session_id=session_id, role="assistant", content=content, answer_status=status, citations=citations, suggestions=suggestions, latency_ms=latency_ms, created_at=datetime.now(timezone.utc)))
+        db.commit()
+        return _message_out(db.get(ChatMessage, message_id))
+
+    return StreamingResponse(_stream(session_id, payload.content, results, has_results, session.regulation_ids, started), media_type="text/event-stream")
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, default=str, ensure_ascii=False)}\n\n"
+
+
+async def _stream(session_id: uuid.UUID, query: str, results: list[ai.SearchResultDict], has_results: bool, regulation_ids: list[str], started: float):
+    message_id = uuid.uuid4()
+    yield _sse("status", {"stage": "rewrite", "rewritten_query": query})
+    yield _sse("status", {"stage": "retrieve", "hits": len(results) if has_results else 0})
+
+    content = NOT_FOUND_TEXT
+    citations: list[dict] = []
+    suggestions: list[dict] | None = None
+    status = "NOT_FOUND"
+
+    db = SessionLocal()
+    try:
+        if has_results:
+            status = "ANSWERED"
+            tokens: list[str] = []
+            async for event in ai.generate_answer_stream(query, results, message_id):
+                if event["event"] == "token":
+                    tokens.append(event["data"]["text"])
+                    yield _sse("token", event["data"])
+                elif event["event"] == "citation":
+                    citations.append(event["data"])
+                    yield _sse("citation", event["data"])
+            content = "".join(tokens)
+        else:
+            suggestions = _suggestions(db, regulation_ids)
+
+        latency_ms = int((time.monotonic() - started) * 1000)
+        done_data = {"message_id": str(message_id), "answer_status": status, "latency_ms": latency_ms, "suggestions": suggestions, "content": content if status == "NOT_FOUND" else None}
+        yield _sse("done", done_data)
+
+        db.add(ChatMessage(id=message_id, session_id=session_id, role="assistant", content=content, answer_status=status, citations=citations, suggestions=suggestions, latency_ms=latency_ms, created_at=datetime.now(timezone.utc)))
+        db.commit()
+    except Exception as exc:  # noqa: BLE001 - 스트림 중 오류를 SSE error 이벤트로 알리기 위해 폭넓게 포착
+        yield _sse("error", {"code": "INTERNAL_ERROR", "message": str(exc)})
+    finally:
+        db.close()
+
+
 @router.post("/messages/{message_id}/feedback", status_code=201)
-async def post_message_feedback(message_id: uuid.UUID, payload: FeedbackRequest) -> dict[str, bool]:
-    raise HTTPException(status_code=501, detail="구현 대기 (6주차)")
+async def post_message_feedback(message_id: uuid.UUID, payload: FeedbackRequest, db: Session = Depends(get_db), _user: User = Depends(get_current_user)) -> dict[str, bool]:
+    message = db.get(ChatMessage, message_id)
+    if not message:
+        raise ApiError(404, "NOT_FOUND", "메시지를 찾을 수 없습니다")
+    message.feedback = payload.rating
+    db.commit()
+    return {"ok": True}

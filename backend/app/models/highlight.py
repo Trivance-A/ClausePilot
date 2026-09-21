@@ -21,9 +21,9 @@ class Highlight(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
-    extraction_field_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("extraction_fields.id"), nullable=True)
-    risk_finding_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("risk_findings.id"), nullable=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
+    extraction_field_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("extraction_fields.id", ondelete="CASCADE"), nullable=True)
+    risk_finding_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("risk_findings.id", ondelete="CASCADE"), nullable=True)
     page_no: Mapped[int] = mapped_column(Integer)
     bbox: Mapped[list] = mapped_column(JSONB)
     origin: Mapped[str] = mapped_column(String, default="auto")

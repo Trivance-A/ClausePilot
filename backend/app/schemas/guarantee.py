@@ -16,6 +16,25 @@ GUARANTEE_TYPE_LABELS: dict[str, str] = {
     "other": "기타",
 }
 
+_ALL_FIELDS: list[FieldCode] = [
+    "contract_name",
+    "contract_amount",
+    "guarantee_amount",
+    "contract_date",
+    "performance_due_date",
+    "guarantee_period",
+    "creditor_name",
+    "creditor_biz_no",
+]
+REQUIRED_FIELDS: dict[str, list[FieldCode]] = {
+    "contract": _ALL_FIELDS,
+    "bid": ["contract_name", "contract_amount", "contract_date", "creditor_name", "creditor_biz_no"],
+    "defect": ["contract_name", "contract_amount", "guarantee_amount", "performance_due_date", "guarantee_period", "creditor_name", "creditor_biz_no"],
+    "payment": ["contract_name", "contract_amount", "guarantee_amount", "contract_date", "creditor_name", "creditor_biz_no"],
+    "advance": ["contract_name", "contract_amount", "guarantee_amount", "contract_date", "guarantee_period", "creditor_name", "creditor_biz_no"],
+    "other": _ALL_FIELDS,
+}
+
 
 class GuaranteePeriod(BaseModel):
     start: str | None

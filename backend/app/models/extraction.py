@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.time import utcnow
 from app.db.session import Base
 
 FIELD_CODES = [
@@ -26,10 +27,10 @@ class Extraction(Base):
     __tablename__ = "extractions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), unique=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), unique=True)
     status: Mapped[str] = mapped_column(String, default="AUTO")
     model_name: Mapped[str] = mapped_column(String)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     fields: Mapped[list["ExtractionField"]] = relationship(back_populates="extraction")
 
@@ -41,7 +42,7 @@ class ExtractionField(Base):
     __tablename__ = "extraction_fields"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    extraction_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("extractions.id"))
+    extraction_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("extractions.id", ondelete="CASCADE"))
     field_code: Mapped[str] = mapped_column(String)
     label: Mapped[str] = mapped_column(String)
     color_key: Mapped[str | None] = mapped_column(String, nullable=True)

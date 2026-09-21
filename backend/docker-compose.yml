@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: contract_ai
     ports:
-      - "5432:5432"
+      - "5433:5432"  # 호스트 5432는 다른 프로젝트가 사용 중일 수 있어 5433으로 매핑 (컨테이너 내부는 그대로 5432)
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +20,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/contract_ai
     ports:
-      - "8000:8000"
+      - "8080:8000"  # 호스트 8000은 다른 프로젝트가 사용 중일 수 있어 8080으로 매핑
     depends_on:
       db:
         condition: service_healthy

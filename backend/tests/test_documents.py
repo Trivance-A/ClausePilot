@@ -1,77 +1,59 @@
-"""4주차 시점: 엔드포인트는 스텁 상태(501)이므로 '라우트가 올바르게 존재하는지'만 검증한다.
-6주차에 실제 로직이 채워지면 이 테스트들을 실제 동작(200/202 + 응답 스키마) 검증으로 교체해야 한다.
-"""
-
 import uuid
 
-BASE = "/api/v1/documents"
+from tests.helpers import upload_and_wait_document
+from tests.pdf_fixtures import contract_pdf_bytes
 
 
-def test_list_documents_route_exists(client):
-    response = client.get(BASE, params={"q": "계약", "status": "OCR,EXTRACTING", "page": 1, "size": 20})
-
-    assert response.status_code == 501
-
-
-def test_upload_documents_route_exists(client):
-    response = client.post(
-        BASE,
-        files=[("files", ("test.pdf", b"%PDF-1.4", "application/pdf"))],
-        data={"ocr_engine": "auto", "skip_risk": "false"},
-    )
-
-    assert response.status_code == 501
+def test_upload_and_pipeline_completes(client, admin_headers):
+    doc_id = upload_and_wait_document(client, admin_headers)
+    r = client.get(f"/api/v1/documents/{doc_id}", headers=admin_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "DONE"
+    assert body["page_count"] == 1
+    assert body["extraction"] is not None
 
 
-def test_get_document_status_route_exists(client):
-    response = client.get(f"{BASE}/{uuid.uuid4()}/status")
-
-    assert response.status_code == 501
-
-
-def test_get_document_pdf_route_exists(client):
-    response = client.get(f"{BASE}/{uuid.uuid4()}/pdf")
-
-    assert response.status_code == 501
+def test_list_documents_filters_by_status(client, admin_headers):
+    doc_id = upload_and_wait_document(client, admin_headers)
+    r = client.get("/api/v1/documents", headers=admin_headers, params={"status": "DONE", "size": 50})
+    assert r.status_code == 200
+    ids = [item["id"] for item in r.json()["items"]]
+    assert doc_id in ids
 
 
-def test_export_document_pdf_route_exists(client):
-    response = client.get(f"{BASE}/{uuid.uuid4()}/export/pdf")
+def test_document_lines_and_pdf(client, admin_headers):
+    doc_id = upload_and_wait_document(client, admin_headers)
+    r = client.get(f"/api/v1/documents/{doc_id}/lines", headers=admin_headers, params={"page": 1})
+    assert r.status_code == 200
+    assert len(r.json()["lines"]) > 0
 
-    assert response.status_code == 501
-
-
-def test_get_document_lines_route_exists(client):
-    response = client.get(f"{BASE}/{uuid.uuid4()}/lines", params={"page": 1})
-
-    assert response.status_code == 501
-
-
-def test_get_document_lines_requires_page(client):
-    response = client.get(f"{BASE}/{uuid.uuid4()}/lines")
-
-    assert response.status_code == 422
+    r = client.get(f"/api/v1/documents/{doc_id}/pdf", headers=admin_headers)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
 
 
-def test_get_document_route_exists(client):
-    response = client.get(f"{BASE}/{uuid.uuid4()}")
-
-    assert response.status_code == 501
-
-
-def test_reprocess_document_route_exists(client):
-    response = client.post(f"{BASE}/{uuid.uuid4()}/reprocess", json={"from_step": "ocr"})
-
-    assert response.status_code == 501
+def test_reprocess_from_risk(client, admin_headers):
+    doc_id = upload_and_wait_document(client, admin_headers)
+    r = client.post(f"/api/v1/documents/{doc_id}/reprocess", headers=admin_headers, json={"from_step": "risk"})
+    assert r.status_code == 202
+    assert r.json()["job_id"]
 
 
-def test_delete_document_route_exists(client):
-    response = client.delete(f"{BASE}/{uuid.uuid4()}")
+def test_delete_document_cascades(client, admin_headers):
+    doc_id = upload_and_wait_document(client, admin_headers)
+    r = client.delete(f"/api/v1/documents/{doc_id}", headers=admin_headers)
+    assert r.status_code == 204
+    assert client.get(f"/api/v1/documents/{doc_id}", headers=admin_headers).status_code == 404
+    assert client.get(f"/api/v1/documents/{doc_id}/extractions", headers=admin_headers).status_code == 404
 
-    assert response.status_code == 501
+
+def test_get_unknown_document_returns_error_envelope(client, admin_headers):
+    r = client.get(f"/api/v1/documents/{uuid.uuid4()}", headers=admin_headers)
+    assert r.status_code == 404
+    assert r.json() == {"error": {"code": "NOT_FOUND", "message": "문서를 찾을 수 없습니다", "detail": None}}
 
 
-def test_get_document_status_rejects_invalid_uuid(client):
-    response = client.get(f"{BASE}/not-a-uuid/status")
-
-    assert response.status_code == 422
+def test_upload_requires_auth(client):
+    r = client.post("/api/v1/documents", files={"files": ("a.pdf", contract_pdf_bytes(), "application/pdf")}, data={"ocr_engine": "auto", "skip_risk": "false"})
+    assert r.status_code == 401
