@@ -1,10 +1,10 @@
-"""문서/규정 업로드 후 백그라운드에서 실행되는 파이프라인. FastAPI BackgroundTasks가 호출하므로
-요청 컨텍스트의 DB 세션을 재사용하지 않고 매번 새 세션을 연다."""
+"""문서/규정 업로드 후 RQ 워커 프로세스(app/core/queue.py)에서 실행되는 파이프라인 함수들.
+api 프로세스의 요청 컨텍스트와는 별도 프로세스/세션이므로 매번 새 DB 세션을 연다."""
 
-import shutil
 import uuid
 from datetime import datetime, timezone
 
+import app.models  # noqa: F401 - worker 프로세스가 이 모듈만 임포트해도 전체 모델이 Base.metadata에 등록되게 함
 from app.core.storage import normalized_dir
 from app.db.session import SessionLocal
 from app.models.document import Document, OcrLine, Page
@@ -13,9 +13,49 @@ from app.models.highlight import Highlight
 from app.models.job import Job
 from app.models.regulation import Regulation, RegulationChunk, RegulationNode
 from app.models.risk import RiskFinding
+from app.models.risk_rule import RiskRule
 from app.services import ai_client as ai
 
 _FIELD_LABELS = ai.FIELD_LABELS
+
+
+def _rebuild_node_tree(rows: list[RegulationNode]) -> list[ai.RegulationNodeDict]:
+    """DB에 저장된 평면 노드 목록(parent_id만 있음)을 parent_id 기준으로 다시 트리로 묶는다.
+    chunk_regulation이 조(article) 노드의 children(항 등)을 순회해 본문을 합치므로,
+    children이 실제로 채워진 트리를 넘겨야 한다(평면 목록에 children=[]를 넣으면 안 됨)."""
+    children_of: dict[uuid.UUID | None, list[RegulationNode]] = {}
+    for r in rows:
+        children_of.setdefault(r.parent_id, []).append(r)
+    for lst in children_of.values():
+        lst.sort(key=lambda r: r.sort_order)
+
+    def build(parent_id: uuid.UUID | None) -> list[ai.RegulationNodeDict]:
+        return [
+            {
+                "level": r.level, "number": r.number, "title": r.title, "path": r.path,
+                "page_no": r.page_no, "bbox": r.bbox, "content": r.content, "children": build(r.id),
+            }
+            for r in children_of.get(parent_id, [])
+        ]
+
+    return build(None)
+
+
+def _active_risk_rules(db) -> list[ai.RiskRuleDict]:
+    rows = db.query(RiskRule).filter(RiskRule.enabled.is_(True)).all()
+    return [
+        {
+            "rule_code": r.rule_code,
+            "category": r.category,
+            "rule_type": r.rule_type,
+            "title": r.title,
+            "description": r.description,
+            "keywords": r.keywords,
+            "field_code": r.field_code,
+            "base_score": r.base_score,
+        }
+        for r in rows
+    ]
 
 
 def _fail(db, document: Document | None, regulation: Regulation | None, job: Job, step: str, reason: str) -> None:
@@ -48,9 +88,9 @@ def run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
             document.status, job.current_step, job.progress = "NORMALIZING", "normalize", 10
             db.commit()
             norm_path = str(normalized_dir() / f"{document.id}.pdf")
-            shutil.copyfile(document.original_path, norm_path)
-            normalized = ai.normalize_to_pdf(norm_path, document.original_format)
-        except ai.UnsupportedFormatError as exc:
+            normalized = ai.normalize_to_pdf(document.original_path, document.original_format, norm_path)
+        except (ai.UnsupportedFormatError, ValueError) as exc:
+            # ValueError: hwp5txt 등 외부 파서 실행 실패(손상된 파일 등)도 실패로 분류
             _fail(db, document, None, job, "normalize", str(exc))
             return
 
@@ -86,7 +126,7 @@ def run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
 
         document.status, job.current_step, job.progress = "RISK", "risk", 85
         db.commit()
-        risks = ai.detect_risks(ocr_lines, fields)
+        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db))
         for r in risks:
             highlights = r.pop("highlights")
             risk_row = RiskFinding(document_id=document.id, status="OPEN", **r)
@@ -155,7 +195,7 @@ def run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) -> 
         document.status, job.current_step, job.progress = "RISK", "risk", 85
         db.commit()
         db.query(RiskFinding).filter(RiskFinding.document_id == document.id).delete()
-        risks = ai.detect_risks(ocr_lines, fields)
+        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db))
         for r in risks:
             highlights = r.pop("highlights")
             risk_row = RiskFinding(document_id=document.id, status="OPEN", **r)
@@ -209,16 +249,11 @@ def run_regulation_pipeline(regulation_id: uuid.UUID, job_id: uuid.UUID) -> None
         db.commit()
         all_nodes = db.query(RegulationNode).filter(RegulationNode.regulation_id == regulation.id).all()
         node_by_path = {n.path: n for n in all_nodes}
-        chunks = ai.chunk_regulation(
-            [
-                {"level": n.level, "number": n.number, "title": n.title, "path": n.path, "page_no": n.page_no, "bbox": n.bbox, "content": n.content, "children": []}
-                for n in all_nodes
-            ]
-        )
-        refs = ai.index_chunks(chunks)
-        for c, ref in zip(chunks, refs, strict=True):
+        chunks = ai.chunk_regulation(_rebuild_node_tree(all_nodes))
+        embeddings = ai.index_chunks(chunks)
+        for c, embedding in zip(chunks, embeddings, strict=True):
             node = node_by_path.get(c["node_path"])
-            db.add(RegulationChunk(regulation_id=regulation.id, node_id=node.id if node else None, content=c["content"], embedding_ref=ref))
+            db.add(RegulationChunk(regulation_id=regulation.id, node_id=node.id if node else None, content=c["content"], embedding=embedding))
         db.commit()
 
         regulation.status = "INDEXED"

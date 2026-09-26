@@ -2,12 +2,13 @@ import uuid
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 from starlette.responses import FileResponse
 
 from app.core.deps import get_current_user
 from app.core.errors import ApiError
+from app.core.queue import default_queue
 from app.core.storage import regulations_dir, save_upload
 from app.db.session import get_db
 from app.models.job import Job
@@ -58,7 +59,6 @@ async def list_regulations(db: Session = Depends(get_db), _user: User = Depends(
 
 @router.post("", response_model=UploadRegulationResponse, status_code=202)
 async def upload_regulation(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(...),
     doc_type: Literal["정관", "규정", "지침", "매뉴얼"] = Form(...),
@@ -88,7 +88,7 @@ async def upload_regulation(
     db.add(job)
     db.commit()
 
-    background_tasks.add_task(run_regulation_pipeline, reg_id, job.id)
+    default_queue.enqueue(run_regulation_pipeline, reg_id, job.id)
     return UploadRegulationResponse(regulation_id=reg_id, job_id=job.id, version=version, status="UPLOADED")
 
 
@@ -127,7 +127,7 @@ async def get_regulation(regulation_id: uuid.UUID, db: Session = Depends(get_db)
 
 
 @router.post("/{regulation_id}/reindex", response_model=ReindexResponse, status_code=202)
-async def reindex_regulation(regulation_id: uuid.UUID, payload: ReindexRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+async def reindex_regulation(regulation_id: uuid.UUID, payload: ReindexRequest, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
     reg = _get_or_404(db, regulation_id)
     db.query(RegulationChunk).filter(RegulationChunk.regulation_id == regulation_id).delete()
     db.query(RegulationNode).filter(RegulationNode.regulation_id == regulation_id).delete()
@@ -135,7 +135,7 @@ async def reindex_regulation(regulation_id: uuid.UUID, payload: ReindexRequest, 
     job = Job(job_type="index_regulation", target_id=regulation_id, target_name=reg.title, status="QUEUED")
     db.add(job)
     db.commit()
-    background_tasks.add_task(run_regulation_pipeline, regulation_id, job.id)
+    default_queue.enqueue(run_regulation_pipeline, regulation_id, job.id)
     return ReindexResponse(job_id=job.id)
 
 

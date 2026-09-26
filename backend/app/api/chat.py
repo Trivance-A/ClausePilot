@@ -10,7 +10,7 @@ from starlette.responses import StreamingResponse
 from app.core.deps import get_current_user
 from app.core.errors import ApiError
 from app.db.session import SessionLocal, get_db
-from app.models.chat import ChatMessage, ChatSession
+from app.models.chat import ChatMessage, ChatSession, Citation, MessageFeedback
 from app.models.regulation import Regulation, RegulationNode
 from app.models.user import User
 from app.schemas.chat import (
@@ -38,10 +38,36 @@ def _session_out(s: ChatSession) -> ChatSessionOut:
 
 
 def _message_out(m: ChatMessage) -> ChatMessageOut:
+    citations = [
+        {
+            "ref": c.ref, "chunk_id": c.chunk_id, "regulation_id": c.regulation_id, "regulation_title": c.regulation_title,
+            "path": c.path, "quoted_span": c.quoted_span, "page_no": c.page_no, "bbox": c.bbox, "node_id": c.node_id,
+        }
+        for c in m.citations
+    ]
     return ChatMessageOut(
         id=m.id, role=m.role, content=m.content, created_at=m.created_at, answer_status=m.answer_status,
-        citations=m.citations if m.role == "assistant" else None, suggestions=m.suggestions, latency_ms=m.latency_ms, feedback=m.feedback,
+        citations=citations if m.role == "assistant" else None, suggestions=m.suggestions, latency_ms=m.latency_ms,
+        feedback=m.feedback.rating if m.feedback else None,
     )
+
+
+def _save_citations(db: Session, message_id: uuid.UUID, citation_dicts: list[dict]) -> None:
+    for c in citation_dicts:
+        db.add(
+            Citation(
+                message_id=message_id,
+                ref=c["ref"],
+                chunk_id=uuid.UUID(c["chunk_id"]) if c.get("chunk_id") else None,
+                regulation_id=uuid.UUID(c["regulation_id"]) if c.get("regulation_id") else None,
+                regulation_title=c["regulation_title"],
+                path=c["path"],
+                quoted_span=c.get("quoted_span"),
+                page_no=c.get("page_no"),
+                bbox=list(c["bbox"]) if c.get("bbox") else None,
+                node_id=uuid.UUID(c["node_id"]) if c.get("node_id") else None,
+            )
+        )
 
 
 @router.get("/sessions")
@@ -95,7 +121,7 @@ async def post_chat_message(session_id: uuid.UUID, payload: SendMessageRequest, 
     regulation_ids = session.regulation_ids or None
     started = time.monotonic()
     results = run_search(db, payload.content, regulation_ids, top_k=5)
-    has_results = bool(results) and (results[0]["bm25_score"] > 0 or results[0]["vector_score"] > 0)
+    has_results = ai.is_relevant(results)
 
     if not payload.stream:
         message_id = uuid.uuid4()
@@ -111,7 +137,8 @@ async def post_chat_message(session_id: uuid.UUID, payload: SendMessageRequest, 
                     content = event["data"]["content"]
             suggestions, status = None, "ANSWERED"
         latency_ms = int((time.monotonic() - started) * 1000)
-        db.add(ChatMessage(id=message_id, session_id=session_id, role="assistant", content=content, answer_status=status, citations=citations, suggestions=suggestions, latency_ms=latency_ms, created_at=datetime.now(timezone.utc)))
+        db.add(ChatMessage(id=message_id, session_id=session_id, role="assistant", content=content, answer_status=status, suggestions=suggestions, latency_ms=latency_ms, created_at=datetime.now(timezone.utc)))
+        _save_citations(db, message_id, citations)
         db.commit()
         return _message_out(db.get(ChatMessage, message_id))
 
@@ -152,7 +179,8 @@ async def _stream(session_id: uuid.UUID, query: str, results: list[ai.SearchResu
         done_data = {"message_id": str(message_id), "answer_status": status, "latency_ms": latency_ms, "suggestions": suggestions, "content": content if status == "NOT_FOUND" else None}
         yield _sse("done", done_data)
 
-        db.add(ChatMessage(id=message_id, session_id=session_id, role="assistant", content=content, answer_status=status, citations=citations, suggestions=suggestions, latency_ms=latency_ms, created_at=datetime.now(timezone.utc)))
+        db.add(ChatMessage(id=message_id, session_id=session_id, role="assistant", content=content, answer_status=status, suggestions=suggestions, latency_ms=latency_ms, created_at=datetime.now(timezone.utc)))
+        _save_citations(db, message_id, citations)
         db.commit()
     except Exception as exc:  # noqa: BLE001 - 스트림 중 오류를 SSE error 이벤트로 알리기 위해 폭넓게 포착
         yield _sse("error", {"code": "INTERNAL_ERROR", "message": str(exc)})
@@ -165,6 +193,10 @@ async def post_message_feedback(message_id: uuid.UUID, payload: FeedbackRequest,
     message = db.get(ChatMessage, message_id)
     if not message:
         raise ApiError(404, "NOT_FOUND", "메시지를 찾을 수 없습니다")
-    message.feedback = payload.rating
+    existing = db.query(MessageFeedback).filter(MessageFeedback.message_id == message_id).one_or_none()
+    if existing:
+        existing.rating, existing.comment = payload.rating, payload.comment
+    else:
+        db.add(MessageFeedback(message_id=message_id, rating=payload.rating, comment=payload.comment))
     db.commit()
     return {"ok": True}

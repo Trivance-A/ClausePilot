@@ -1,10 +1,11 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
 from app.core.errors import ApiError
+from app.core.queue import default_queue
 from app.db.session import get_db
 from app.models.document import Document, OcrLine
 from app.models.extraction import Extraction
@@ -48,7 +49,7 @@ async def get_risks(document_id: uuid.UUID, db: Session = Depends(get_db), _user
 
 
 @router.post("/documents/{document_id}/risks/rerun", response_model=RerunResponse, status_code=202)
-async def rerun_risks(document_id: uuid.UUID, background_tasks: BackgroundTasks, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+async def rerun_risks(document_id: uuid.UUID, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
     document = db.get(Document, document_id)
     if not document:
         raise ApiError(404, "NOT_FOUND", "문서를 찾을 수 없습니다")
@@ -58,7 +59,7 @@ async def rerun_risks(document_id: uuid.UUID, background_tasks: BackgroundTasks,
     job = Job(job_type="process_document", target_id=document_id, target_name=document.original_name, status="QUEUED")
     db.add(job)
     db.commit()
-    background_tasks.add_task(run_reprocess, document_id, job.id, "risk")
+    default_queue.enqueue(run_reprocess, document_id, job.id, "risk")
     return RerunResponse(job_id=job.id)
 
 

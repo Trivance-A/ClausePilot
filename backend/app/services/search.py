@@ -27,6 +27,7 @@ def search(db: Session, query: str, regulation_ids: list[uuid.UUID] | None, top_
             "node_id": str(node.id) if node else None,
             "page_no": node.page_no if node else None,
             "bbox": tuple(node.bbox) if node and node.bbox else None,
+            "embedding": list(chunk.embedding) if chunk.embedding is not None else None,
         }
         for chunk, reg, node in q.all()
     ]

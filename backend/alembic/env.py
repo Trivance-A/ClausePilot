@@ -9,9 +9,9 @@ from alembic import context
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/ 를 import 경로에 추가
 
+import app.models  # noqa: E402,F401 (Base.metadata 등록용 - 모든 모델 서브모듈을 모아 임포트)
 from app.core.config import settings  # noqa: E402
 from app.db.session import Base  # noqa: E402
-from app.models import chat, document, eval, extraction, guarantee, highlight, job, regulation, risk, user  # noqa: E402,F401 (Base.metadata 등록용)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

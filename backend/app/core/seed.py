@@ -1,6 +1,8 @@
 from app.core.security import hash_password
 from app.db.session import SessionLocal
+from app.models.risk_rule import RiskRule
 from app.models.user import User
+from app.services.ai_client import DEFAULT_RISK_RULES
 
 
 def ensure_demo_users() -> None:
@@ -11,6 +13,19 @@ def ensure_demo_users() -> None:
             return
         db.add(User(name="관리자", email="admin@example.com", password_hash=hash_password("admin1234"), role="admin"))
         db.add(User(name="사용자", email="user@example.com", password_hash=hash_password("user1234"), role="user"))
+        db.commit()
+    finally:
+        db.close()
+
+
+def ensure_default_risk_rules() -> None:
+    """빈 risk_rules 테이블을 ai_client.DEFAULT_RISK_RULES로 채운다. idempotent."""
+    db = SessionLocal()
+    try:
+        if db.query(RiskRule).count() > 0:
+            return
+        for rule in DEFAULT_RISK_RULES:
+            db.add(RiskRule(**rule))
         db.commit()
     finally:
         db.close()

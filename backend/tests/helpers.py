@@ -19,11 +19,11 @@ def wait_for(fn, terminal: set[str], timeout: float = 10.0) -> str:
     raise TimeoutError(f"timed out waiting for terminal status, last={status}")
 
 
-def upload_and_wait_document(client: TestClient, headers: dict) -> str:
+def upload_and_wait_document(client: TestClient, headers: dict, *, filename: str = "test.pdf", content: bytes | None = None, content_type: str = "application/pdf", expect_status: str = "DONE") -> str:
     r = client.post(
         "/api/v1/documents",
         headers=headers,
-        files={"files": ("test.pdf", contract_pdf_bytes(), "application/pdf")},
+        files={"files": (filename, content if content is not None else contract_pdf_bytes(), content_type)},
         data={"ocr_engine": "auto", "skip_risk": "false"},
     )
     assert r.status_code == 202, r.text
@@ -33,7 +33,7 @@ def upload_and_wait_document(client: TestClient, headers: dict) -> str:
         return client.get(f"/api/v1/documents/{doc_id}/status", headers=headers).json()["status"]
 
     status = wait_for(_status, TERMINAL_DOCUMENT_STATUSES)
-    assert status == "DONE", f"document pipeline failed: {client.get(f'/api/v1/documents/{doc_id}', headers=headers).json()}"
+    assert status == expect_status, f"document pipeline unexpected status: {client.get(f'/api/v1/documents/{doc_id}', headers=headers).json()}"
     return doc_id
 
 

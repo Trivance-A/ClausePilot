@@ -13,7 +13,7 @@ logs:
 	docker compose logs -f api
 
 test:
-	docker compose up -d db
+	docker compose up -d db redis
 	pytest
 
 migrate:

@@ -24,14 +24,15 @@ SSE 챗봇 응답까지 — 아래 "구현 현황과 한계" 참고).
 
 | 기능 | 현재 구현 | 한계 |
 |---|---|---|
-| 문서 정규화/OCR | PyMuPDF로 PDF 텍스트 레이어 직접 추출 | 텍스트 레이어 없는 스캔본은 실제 OCR 엔진 미연동(빈 결과) |
+| 문서 정규화/OCR | PyMuPDF로 PDF 텍스트 레이어 직접 추출. hwp(pyhwp)/hwpx(zip+XML)/docx/xlsx도 텍스트를 추출해 PDF로 재구성 | 텍스트 레이어 없는 스캔본은 실제 OCR 엔진 미연동(빈 결과). hwp/hwpx/docx/xlsx는 원본 레이아웃 대신 텍스트를 순서대로 재배치(표는 한 줄로 단순화) |
 | 계약서 정보추출 | 키워드 매칭 + 정규식 (금액/날짜/사업자번호 등) | LLM 기반 추출보다 표현 변형에 취약 |
-| 위험조항 탐지 | 키워드/정규식 룰 (지체상금율, 해지조항, 면책조항 등) | 룰에 없는 패턴은 탐지 못함 |
+| 위험조항 탐지 | `risk_rules` DB 테이블 기반 룰 엔진(관리자가 DB에서 직접 조정 가능), 통일된 score→severity 공식(≥0.75 HIGH/≥0.45 MEDIUM) | 룰에 없는 패턴은 탐지 못함 |
 | 규정 구조 파싱 | 정규식 기반 장/조/항 파서 | "제N장/제N조/①~⑮" 형식 외 구조는 인식 못함 |
-| 규정 검색 | BM25 + TF-IDF 코사인 → RRF 결합 (질의 시점 계산, 별도 Vector DB 없음) | 임베딩 기반 의미검색보다 정확도 낮음 |
+| 규정 검색 | **로컬 임베딩**(fastembed, `paraphrase-multilingual-MiniLM-L12-v2`, 384d, pgvector+HNSW 인덱스 저장) 코사인 유사도 + **Kiwi 형태소 분석** 기반 BM25 → RRF 결합. 청킹은 조(article) 단위로 하위 항을 합쳐 1청크 | bge-m3(1024d)·bge-reranker 대신 경량 모델로 대체, cross-encoder rerank 미도입(RRF 순위를 그대로 사용) |
 | 챗봇 답변 생성 | 검색된 조항을 그대로 인용하는 추출형 응답 | 자연스러운 문장 생성은 안 됨(LLM 미연동) |
+| 비동기 작업 처리 | Redis + RQ, `worker` 컨테이너가 별도 프로세스로 처리 | 재시도/우선순위 큐 등 고급 기능 미설정(기본 큐 1개) |
 | 성능평가(`/eval`) | 라이브 DB 데이터 기반 프록시 지표 | 정답 라벨셋이 없어 `failures[]`는 항상 빈 배열 |
-| PDF 내보내기 | PyMuPDF로 하이라이트 사각형 실제 합성 | — |
+| PDF 내보내기 / 페이지 이미지 | PyMuPDF로 하이라이트 사각형 실제 합성 / 페이지 200dpi PNG 렌더링(`GET .../pages/{n}/image`) | — |
 
 데모 계정: `admin@example.com` / `admin1234` (admin), `user@example.com` / `user1234` (user) —
 `SEED_DEMO_USERS=true`(기본값)일 때 앱 시작 시 자동 생성됩니다.
@@ -74,33 +75,39 @@ backend/
 
 ## 실행 환경 하네스 (Docker Compose)
 
-FastAPI(api)와 PostgreSQL(db)을 한 번에 띄우는 로컬 실행 환경입니다.
+FastAPI(api) + PostgreSQL/pgvector(db) + Redis(redis) + RQ 워커(worker) 4개 컨테이너를 한 번에 띄우는
+로컬 실행 환경입니다.
 
 ```bash
 cd backend
 make up        # 또는: docker compose up --build
 ```
 
-- API: http://localhost:8080 (Swagger UI: http://localhost:8080/docs) — 호스트 8000/5432는 다른
-  프로젝트와 충돌할 수 있어 각각 8080/5433으로 매핑했습니다(컨테이너 내부는 그대로 8000/5432).
-- DB: localhost:5433 (postgres/postgres/contract_ai)
-- 앱 시작 시 `Base.metadata.create_all()`로 테이블을 자동 생성하고 데모 계정을 시드합니다(개발 편의용).
-  배포 환경에서는 `alembic upgrade head`로 마이그레이션을 관리하세요 (`alembic/versions/`에 초기
-  마이그레이션이 이미 포함되어 있습니다. 새 마이그레이션: `alembic revision --autogenerate -m "..."`).
+- API: http://localhost:8080 (Swagger UI: http://localhost:8080/docs) — 호스트 8000/5432/6379는 다른
+  프로젝트와 충돌할 수 있어 각각 8080/5433/6380으로 매핑했습니다(컨테이너 내부는 그대로 8000/5432/6379).
+- DB: localhost:5433 (postgres/postgres/contract_ai, `pgvector/pgvector:pg16` 이미지)
+- Redis: localhost:6380 — `api`는 여기에 job을 enqueue만 하고, 실제 실행은 `worker` 컨테이너가 담당한다
+  (같은 이미지, `command: rq worker`로 실행). 업로드 파일은 `./storage`를 두 컨테이너가 공유 마운트한다.
+- 앱 시작 시 `vector` 확장 활성화 + `Base.metadata.create_all()`로 테이블을 자동 생성하고 데모 계정을
+  시드합니다(개발 편의용). 배포 환경에서는 `alembic upgrade head`로 마이그레이션을 관리하세요
+  (`alembic/versions/`에 마이그레이션이 이미 포함되어 있습니다. 새 마이그레이션:
+  `alembic revision --autogenerate -m "..."`).
 - 코드는 `app/` 볼륨 마운트로 즉시 반영(`--reload`)되므로, 컨테이너 재빌드 없이 개발 가능(의존성
   추가 시에는 재빌드 필요: `make build`)
 - 종료: `make down`
 
-Docker 없이 로컬에서 직접 실행하려면 `.env.example`을 `.env`로 복사해 `DATABASE_URL`을
-로컬 PostgreSQL에 맞게 수정한 뒤 `uvicorn app.main:app --reload`로 실행합니다.
+Docker 없이 로컬에서 직접 실행하려면 `.env.example`을 `.env`로 복사해 `DATABASE_URL`/`REDIS_URL`을
+로컬 환경에 맞게 수정한 뒤 `uvicorn app.main:app --reload`(그리고 별도 터미널에서
+`rq worker --url <REDIS_URL>`)로 실행합니다.
 
 ## 테스트 하네스 (pytest)
 
-**실제 Postgres가 필요합니다** (DB 연동까지 검증하는 통합 테스트이기 때문):
+**실제 Postgres+Redis가 필요합니다** (DB/큐 연동까지 검증하는 통합 테스트이기 때문). 워커 없이도
+`QUEUE_ASYNC=false`(테스트 기본값)로 enqueue()가 즉시 동기 실행되므로 워커 컨테이너는 안 띄워도 됩니다:
 
 ```bash
 cd backend
-docker compose up -d db          # 테스트용 DB 기동 (localhost:5433)
+docker compose up -d db redis    # 테스트용 DB/Redis 기동 (localhost:5433 / 6380)
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 pytest          # 또는: make test

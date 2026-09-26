@@ -3,14 +3,15 @@ from datetime import date, datetime, time
 from typing import Literal
 
 import pymupdf as fitz
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, Response
 
 from app.core.colors import FIELD_COLOR_MAP, RISK_SEVERITY_COLOR, hex_to_rgb01
 from app.core.deps import get_current_user
 from app.core.errors import ApiError
+from app.core.queue import default_queue
 from app.core.storage import save_upload, uploads_dir
 from app.db.session import get_db
 from app.models.document import Document, OcrLine, Page
@@ -116,7 +117,6 @@ async def list_documents(
 
 @router.post("", response_model=UploadResponse, status_code=202)
 async def upload_documents(
-    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     ocr_engine: Literal["auto", "paddle", "tesseract"] = Form("auto"),
     skip_risk: bool = Form(False),
@@ -136,7 +136,7 @@ async def upload_documents(
         db.add(job)
         db.commit()
 
-        background_tasks.add_task(run_document_pipeline, doc_id, job.id)
+        default_queue.enqueue(run_document_pipeline, doc_id, job.id)
         items.append(UploadItem(document_id=doc_id, job_id=job.id, original_name=document.original_name, status="UPLOADED"))
 
     return UploadResponse(items=items)
@@ -172,6 +172,25 @@ async def get_document_pdf(document_id: uuid.UUID, db: Session = Depends(get_db)
     if not document.normalized_pdf_path:
         raise ApiError(409, "INVALID_STATE", "아직 정규화된 PDF가 없습니다")
     return FileResponse(document.normalized_pdf_path, media_type="application/pdf")
+
+
+@router.get("/{document_id}/pages/{page_no}/image")
+async def get_document_page_image(document_id: uuid.UUID, page_no: int, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+    """페이지를 200dpi PNG로 렌더링해 반환한다 (front 폴더의 pdf.js Viewer는 PDF를 직접 렌더링해 호출하지
+    않지만, 명세서 03_API_명세서.docx에 정의되어 있어 구현 — 서버사이드 썸네일/미리보기 등에 쓸 수 있다)."""
+    document = _get_document_or_404(db, document_id)
+    if not document.normalized_pdf_path:
+        raise ApiError(409, "INVALID_STATE", "아직 정규화된 PDF가 없습니다")
+
+    doc = fitz.open(document.normalized_pdf_path)
+    try:
+        if page_no < 1 or page_no > doc.page_count:
+            raise ApiError(404, "NOT_FOUND", "페이지를 찾을 수 없습니다")
+        pixmap = doc[page_no - 1].get_pixmap(dpi=200)
+        png_bytes = pixmap.tobytes("png")
+    finally:
+        doc.close()
+    return Response(content=png_bytes, media_type="image/png")
 
 
 @router.get("/{document_id}/export/pdf")
@@ -239,7 +258,6 @@ async def get_document(document_id: uuid.UUID, db: Session = Depends(get_db), _u
 async def reprocess_document(
     document_id: uuid.UUID,
     payload: ReprocessRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
@@ -251,13 +269,13 @@ async def reprocess_document(
     if payload.from_step is None:
         if not document.original_path:
             raise ApiError(409, "INVALID_STATE", "원본 파일을 찾을 수 없어 처음부터 재처리할 수 없습니다")
-        background_tasks.add_task(run_document_pipeline, document_id, job.id)
+        default_queue.enqueue(run_document_pipeline, document_id, job.id)
     else:
         if payload.from_step in ("extract", "risk") and not db.query(OcrLine).filter(OcrLine.document_id == document_id).first():
             raise ApiError(409, "INVALID_STATE", "OCR 결과가 없어 해당 단계부터 재처리할 수 없습니다")
         if payload.from_step == "risk" and not db.query(Extraction).filter(Extraction.document_id == document_id).first():
             raise ApiError(409, "INVALID_STATE", "추출 결과가 없어 위험조항만 재처리할 수 없습니다")
-        background_tasks.add_task(run_reprocess, document_id, job.id, payload.from_step)
+        default_queue.enqueue(run_reprocess, document_id, job.id, payload.from_step)
 
     return ReprocessResponse(job_id=job.id)
 

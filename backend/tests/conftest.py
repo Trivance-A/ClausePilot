@@ -1,12 +1,14 @@
-"""통합 테스트 하네스. 실제 Postgres가 필요하다 (docker compose up -d db, README 참고).
-DATABASE_URL을 다른 값으로 주지 않으면 docker-compose가 노출하는 localhost:5433을 기본으로 쓴다."""
+"""통합 테스트 하네스. 실제 Postgres+Redis가 필요하다 (docker compose up -d db redis, README 참고).
+DATABASE_URL/REDIS_URL을 다른 값으로 주지 않으면 docker-compose가 노출하는 기본 포트를 쓴다."""
 
 import os
 import tempfile
 
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5433/contract_ai")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6380/0")
 os.environ.setdefault("STORAGE_DIR", tempfile.mkdtemp(prefix="clausepilot_test_storage_"))
 os.environ["SEED_DEMO_USERS"] = "true"
+os.environ["QUEUE_ASYNC"] = "false"  # 워커 프로세스 없이 enqueue() 호출 시 즉시 동기 실행(RQ 공식 테스트 모드)
 
 import pytest
 from fastapi.testclient import TestClient

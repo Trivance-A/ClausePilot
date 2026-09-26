@@ -26,8 +26,10 @@ class ChatSession(Base):
 
 class ChatMessage(Base):
     """role: user|assistant. answer_status(assistant만): ANSWERED|NOT_FOUND|ERROR.
-    citations/suggestions: Citation[]/Suggestion[] 구조 그대로 JSON 저장(프론트 타입과 1:1).
-    feedback: 1(도움됨)|-1(도움안됨)|null, POST /chat/messages/{mid}/feedback 로 갱신."""
+    suggestions: Suggestion[] 구조 그대로 JSON 저장(프론트 타입과 1:1, NOT_FOUND일 때만 채움).
+    citations/feedback은 03_API_명세서 설계대로 별도 테이블(citations/message_feedback)로 분리했다
+    (환각 평가·피드백 집계를 SQL로 바로 할 수 있게, 그리고 regulation_chunks가 재색인으로 없어져도
+    과거 인용 기록 자체는 남도록 — 그래서 chunk_id/regulation_id/node_id는 하드 FK를 걸지 않는다)."""
 
     __tablename__ = "chat_messages"
 
@@ -36,10 +38,46 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(Text)
     answer_status: Mapped[str | None] = mapped_column(String, nullable=True)
-    citations: Mapped[list] = mapped_column(JSONB, default=list)
     suggestions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    feedback: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     session: Mapped["ChatSession"] = relationship(back_populates="messages")
+    citations: Mapped[list["Citation"]] = relationship(back_populates="message", cascade="all, delete-orphan", order_by="Citation.ref")
+    feedback: Mapped["MessageFeedback | None"] = relationship(back_populates="message", cascade="all, delete-orphan", uselist=False)
+
+
+class Citation(Base):
+    """근거 조항 인용 1건. quoted_span으로 환각(hallucination) 평가에 쓴다(citations 테이블 — 03_API_명세서).
+    chunk_id/regulation_id/node_id는 재색인·아카이브로 원본이 사라져도 인용 이력은 남아야 해서
+    하드 FK를 걸지 않는다(참조만 하는 느슨한 UUID)."""
+
+    __tablename__ = "citations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"))
+    ref: Mapped[int] = mapped_column(Integer)
+    chunk_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    regulation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    regulation_title: Mapped[str] = mapped_column(String)
+    path: Mapped[str] = mapped_column(String)
+    quoted_span: Mapped[str | None] = mapped_column(Text, nullable=True)
+    page_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bbox: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    node_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    message: Mapped["ChatMessage"] = relationship(back_populates="citations")
+
+
+class MessageFeedback(Base):
+    """메시지당 최신 피드백 1건(재전송 시 덮어씀). rating: 1(도움됨) | -1(도움안됨)."""
+
+    __tablename__ = "message_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), unique=True)
+    rating: Mapped[int] = mapped_column(Integer)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    message: Mapped["ChatMessage"] = relationship(back_populates="feedback")

@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16  # postgres:16 + vector 확장(정규 Postgres 이미지, 데이터 디렉터리 호환)
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -15,17 +15,46 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"  # 호스트 6379는 다른 프로젝트가 사용 중일 수 있어 6380으로 매핑
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   api:
     build: .
     environment:
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/contract_ai
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8080:8000"  # 호스트 8000은 다른 프로젝트가 사용 중일 수 있어 8080으로 매핑
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - ./app:/app/app
+      - ./storage:/app/storage  # worker가 별도 컨테이너이므로 업로드 파일을 호스트 경로로 공유해야 함
+
+  worker:
+    build: .
+    command: ["rq", "worker", "--url", "redis://redis:6379/0"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/contract_ai
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./storage:/app/storage  # api가 저장한 업로드 파일을 워커도 같은 경로에서 읽어야 함
 
 volumes:
   db_data:

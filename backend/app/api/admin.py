@@ -31,7 +31,7 @@ async def get_admin_stats(db: Session = Depends(get_db), _user: User = Depends(r
     recent_assistant = db.query(ChatMessage).filter(ChatMessage.role == "assistant", ChatMessage.created_at >= since).all()
     not_found = sum(1 for m in recent_assistant if m.answer_status == "NOT_FOUND")
     rated = [m for m in recent_assistant if m.feedback is not None]
-    thumbs_up = sum(1 for m in rated if m.feedback == 1)
+    thumbs_up = sum(1 for m in rated if m.feedback.rating == 1)
 
     finished_jobs = (
         db.query(Job)
@@ -111,7 +111,7 @@ async def list_chat_logs(
         writer.writerow(["id", "question", "answer_status", "citations", "feedback", "latency_ms", "created_at"])
         for m in rows:
             question = _question_for(db, m)
-            writer.writerow([str(m.id), question, m.answer_status, "|".join(c.get("path", "") for c in (m.citations or [])), m.feedback, m.latency_ms, m.created_at])
+            writer.writerow([str(m.id), question, m.answer_status, "|".join(c.path for c in m.citations), m.feedback.rating if m.feedback else None, m.latency_ms, m.created_at])
         return Response(content="﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8")
 
     total = q.count()
@@ -119,7 +119,7 @@ async def list_chat_logs(
     items = [
         ChatLogItem(
             id=m.id, session_id=m.session_id, question=_question_for(db, m), answer=m.content, answer_status=m.answer_status,
-            citations=[ChatLogCitation(path=c.get("path", "")) for c in (m.citations or [])], feedback=m.feedback,
+            citations=[ChatLogCitation(path=c.path) for c in m.citations], feedback=m.feedback.rating if m.feedback else None,
             latency_ms=m.latency_ms or 0, created_at=m.created_at,
         )
         for m in rows

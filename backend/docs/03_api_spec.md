@@ -29,6 +29,7 @@
 | POST | `/documents` | multipart: `files[], ocr_engine(auto\|paddle\|tesseract), skip_risk` → 202 `{items: UploadItem[]}` |
 | GET | `/documents/{id}/status` | 5초 폴링 대상 → `{status, job}` |
 | GET | `/documents/{id}/pdf` | 정규화 PDF 바이너리 |
+| GET | `/documents/{id}/pages/{n}/image` | 페이지 200dpi PNG (front 폴더는 pdf.js로 PDF를 직접 렌더링해 호출하지 않지만 명세에 있어 구현) |
 | GET | `/documents/{id}/export/pdf` | 하이라이트가 합성된 PDF 다운로드 |
 | GET | `/documents/{id}/lines?page=` | 페이지별 OCR 라인 → `{page_no, lines}` |
 | GET | `/documents/{id}` | 상세(`pages`, `extraction` 참조 포함) |
