@@ -1,3 +1,6 @@
 node_modules
 dist
 .env.local
+# pdf.js 자산 (postinstall 로 생성)
+public/cmaps
+public/standard_fonts

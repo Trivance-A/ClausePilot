@@ -14,7 +14,13 @@ export function loadPdf(path: string): Promise<PDFDocumentProxy> {
   if (!p) {
     p = rawRequest(path)
       .then((r) => r.arrayBuffer())
-      .then((data) => pdfjs.getDocument({ data, cMapUrl: undefined }).promise);
+      .then((data) => pdfjs.getDocument({
+        data,
+        // 한글 등 CJK CID 폰트 렌더링에 필요 (scripts/copy-pdfjs-assets.mjs 가 public/ 으로 복사)
+        cMapUrl: '/cmaps/',
+        cMapPacked: true,
+        standardFontDataUrl: '/standard_fonts/',
+      }).promise);
     p.catch(() => cache.delete(path));
     cache.set(path, p);
   }

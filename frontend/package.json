@@ -8,7 +8,9 @@
     "dev:mock": "VITE_USE_MOCK=true vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/copy-pdfjs-assets.mjs",
+    "pdfjs:assets": "node scripts/copy-pdfjs-assets.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",
@@ -46,6 +48,8 @@
     "vite": "^5.4.10"
   },
   "msw": {
-    "workerDirectory": ["public"]
+    "workerDirectory": [
+      "public"
+    ]
   }
 }
