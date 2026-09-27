@@ -299,7 +299,7 @@ def run_ocr(pdf_path: str) -> list[OcrLineDict]:
 
 _AMOUNT_RE = re.compile(r"[\d][\d,]{2,}")
 _BIZ_NO_RE = re.compile(r"\d{3}-\d{2}-\d{5}")
-_DATE_ISO_RE = re.compile(r"(\d{4})[-.](\d{1,2})[-.](\d{1,2})")
+_DATE_ISO_RE = re.compile(r"(\d{4})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})")  # 2026-10-01 / 2026.10.01 / 2026. 10. 01.
 _DATE_KOR_RE = re.compile(r"(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일")
 _MONTHS = {
     m: i + 1
@@ -310,23 +310,33 @@ _MONTHS = {
 _DATE_EN_RE = re.compile(r"(" + "|".join(_MONTHS) + r")\s+(\d{1,2}),?\s+(\d{4})")
 
 FIELD_KEYWORDS: dict[str, list[str]] = {
-    "contract_name": ["계약건명", "공사명", "사업명", "project name", "contract name"],
+    "contract_name": ["계약건명", "공사명", "사업명", "용역명", "건명", "project name", "contract name"],
     "contract_amount": ["계약금액", "contract amount"],
-    "guarantee_amount": ["계약보증금액", "보증금액", "guarantee amount", "contract guarantee amount"],
+    "guarantee_amount": ["계약보증금액", "보증금해당액", "보증금액", "계약보증금", "guarantee amount", "contract guarantee amount"],
     "contract_date": ["계약일자", "계약체결일", "contract date"],
     "performance_due_date": ["계약이행기일", "준공기한", "완료기한", "completion due date", "due date"],
-    "guarantee_period": ["보증기간", "guarantee period"],
+    "guarantee_period": ["계약보증기간", "보증기간", "guarantee period"],
     "creditor_name": ["채권자", "발주자", "client", "creditor"],
     "creditor_biz_no": ["사업자등록번호", "사업자번호", "business registration"],
 }
 
 
+_WS_RE = re.compile(r"\s+")
+
+
+def _squash(text: str) -> str:
+    """공백 제거 + 소문자. 한글 서식 문서는 '계 약  금 액'처럼 라벨을 띄어 쓰는 경우가 많아 공백 무시 비교."""
+    return _WS_RE.sub("", text).lower()
+
+
+def _find_lines(lines: list[OcrLineDict], keywords: list[str]) -> list[OcrLineDict]:
+    squashed_kws = [_squash(kw) for kw in keywords]
+    return [line for line in lines if any(kw in _squash(line["text"]) for kw in squashed_kws)]
+
+
 def _find_line(lines: list[OcrLineDict], keywords: list[str]) -> OcrLineDict | None:
-    for line in lines:
-        lower = line["text"].lower()
-        if any(kw.lower() in lower for kw in keywords):
-            return line
-    return None
+    found = _find_lines(lines, keywords)
+    return found[0] if found else None
 
 
 def _parse_date(text: str) -> str | None:
@@ -357,14 +367,47 @@ def _highlight_for(line: OcrLineDict) -> HighlightDict:
     return {"page_no": line["page_no"], "bbox": line["bbox"], "ocr_line_id": line["line_id"]}
 
 
+def _has_value(field: ExtractionFieldDict) -> bool:
+    return field["normalized_value"] is not None
+
+
+def _apply_fallbacks(ocr_lines: list[OcrLineDict], results: list[ExtractionFieldDict]) -> None:
+    """라벨 없는 서식(지급각서 등) 대응: 날짜만 있는 줄 → 계약일자, '... 귀하' 줄 → 채권자명 (낮은 confidence)."""
+    by_code = {f["field_code"]: f for f in results}
+    if not by_code["contract_date"]["raw_value"]:
+        for line in ocr_lines:
+            t = line["text"].strip()
+            if (_DATE_KOR_RE.fullmatch(t) or _DATE_ISO_RE.fullmatch(t.rstrip("."))) and (date := _parse_date(t)):
+                by_code["contract_date"].update(
+                    {"raw_value": t, "normalized_value": {"date": date}, "confidence": 0.5, "mapping_method": "fuzzy", "highlights": [_highlight_for(line)]}
+                )
+                break
+    if not by_code["creditor_name"]["raw_value"]:
+        for line in ocr_lines:
+            t = line["text"].strip()
+            if t.endswith("귀하") and len(t) > 2:
+                by_code["creditor_name"].update(
+                    {"raw_value": t, "normalized_value": {"text": t[:-2].strip()}, "confidence": 0.6, "mapping_method": "fuzzy", "highlights": [_highlight_for(line)]}
+                )
+                break
+
+
 def extract_contract_fields(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:
     results: list[ExtractionFieldDict] = []
     for code in FIELD_CODES:
-        line = _find_line(ocr_lines, FIELD_KEYWORDS[code])
-        if not line:
+        candidates = _find_lines(ocr_lines, FIELD_KEYWORDS[code])
+        if not candidates:
             results.append(_empty_field(code))
             continue
+        # 키워드가 여러 줄에 걸리면(예: 제목 '계약보증금 지급각서' vs '보증금해당액 : 금1,600,000원') 값이 파싱되는 줄 우선
+        parsed = [_extract_one(ocr_lines, code, line) for line in candidates]
+        results.append(next((f for f in parsed if _has_value(f)), parsed[0]))
+    _apply_fallbacks(ocr_lines, results)
+    return results
 
+
+def _extract_one(ocr_lines: list[OcrLineDict], code: str, line: OcrLineDict) -> ExtractionFieldDict:
+    if True:
         text = line["text"]
         field: ExtractionFieldDict = {
             "field_code": code,
@@ -417,8 +460,7 @@ def extract_contract_fields(ocr_lines: list[OcrLineDict]) -> list[ExtractionFiel
             value = re.split(r"[:：]", text, maxsplit=1)
             field["normalized_value"] = {"text": value[1].strip() if len(value) > 1 else text}
 
-        results.append(field)
-    return results
+        return field
 
 
 # ==================== 4. 위험조항 탐지 ====================
