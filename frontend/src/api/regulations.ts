@@ -48,7 +48,7 @@ export function useReindexRegulation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, chunk_strategy }: { id: string; chunk_strategy?: 'article' | 'paragraph' }) =>
-      api<{ job_id: string }>(`/regulations/${id}/reindex`, { method: 'POST', body: chunk_strategy ? { chunk_strategy } : undefined }),
+      api<{ job_id: string }>(`/regulations/${id}/reindex`, { method: 'POST', body: chunk_strategy ? { chunk_strategy } : {} }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['regulations'] }),
   });
 }

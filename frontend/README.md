@@ -10,13 +10,32 @@ AI 기반 계약서 검증 및 규정 챗봇 시스템의 프론트엔드 (설�
 ```bash
 npm install
 npm run dev:mock     # 백엔드 없이 목 API로 실행 (http://localhost:3000)
-npm run dev          # 실제 백엔드(FastAPI :8000)로 /api 프록시
+npm run dev          # 실제 백엔드(FastAPI)로 /api 프록시 (기본 http://localhost:8080)
 npm run build        # tsc --noEmit + vite build
 ```
 
 목 모드 로그인: 이메일이 `admin`으로 시작하면 관리자, 그 외는 사용자 (비밀번호 아무거나).
 
-환경변수(`.env.example` 참고): `VITE_API_BASE`(기본 `/api/v1`), `VITE_USE_MOCK`.
+환경변수(`.env.example` 참고): `VITE_API_BASE`(기본 `/api/v1`), `VITE_PROXY_TARGET`(기본 `http://localhost:8080`), `VITE_USE_MOCK`.
+
+## 백엔드 연동 (feat/back)
+
+```bash
+# 1) 백엔드 기동 — Docker Desktop 실행 후
+git checkout feat/back && cd backend
+cp .env.example .env
+docker compose up --build -d     # db(pgvector :5433) · redis(:6380) · api(:8080) · worker
+curl http://localhost:8080/health  # {"status":"ok"}
+
+# 2) 프론트 일반 모드
+cd ../frontend && npm run dev      # /api → http://localhost:8080 프록시
+```
+
+- 테스트 계정 (최초 기동 시 자동 생성): `admin@example.com / admin1234` (관리자), `user@example.com / user1234` (사용자)
+- 백엔드 포트를 바꿨다면 `frontend/.env`에 `VITE_PROXY_TARGET=http://localhost:<port>` 지정
+- Swagger: http://localhost:8080/docs
+- 브라우저 탭을 목 모드에서 열어둔 채 서버만 바꿨다면 강력 새로고침(Cmd+Shift+R) 필요
+- 백엔드 현재 구현은 규칙 기반 AI(OCR·LLM 미연동)라 스캔본 PDF는 추출 결과가 비어 있고, 챗봇은 검색된 조항을 인용하는 추출형 답변입니다 (`backend/README.md` 참고)
 
 ## 화면 ↔ 경로 (04_화면설계서)
 

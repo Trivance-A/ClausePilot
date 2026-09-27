@@ -16,7 +16,7 @@ import { ProgressCard } from '@/components/documents/ProgressCard';
 import { AutofillForm } from '@/components/guarantee/AutofillForm';
 import { GUARANTEE_TYPE_LABELS, FIELD_CODES, type GuaranteeApplication, type GuaranteeFormValues, type GuaranteeType, type UploadItem } from '@/types/api';
 
-const TYPES: GuaranteeType[] = ['contract', 'bid', 'defect', 'payment', 'other'];
+const TYPES: GuaranteeType[] = ['contract', 'bid', 'defect', 'payment', 'advance', 'other'];
 
 export function GuaranteePage() {
   const [params, setParams] = useSearchParams();
