@@ -15,6 +15,7 @@ from app.models.regulation import Regulation, RegulationChunk, RegulationNode
 from app.models.risk import RiskFinding
 from app.models.risk_rule import RiskRule
 from app.services import ai_client as ai
+from app.services.search import search
 
 _FIELD_LABELS = ai.FIELD_LABELS
 
@@ -58,6 +59,10 @@ def _active_risk_rules(db) -> list[ai.RiskRuleDict]:
     ]
 
 
+def _without(d: dict, key: str) -> dict:
+    return {k: v for k, v in d.items() if k != key}
+
+
 def _fail(db, document: Document | None, regulation: Regulation | None, job: Job, step: str, reason: str) -> None:
     if document:
         document.status = "FAILED"
@@ -73,7 +78,25 @@ def _fail(db, document: Document | None, regulation: Regulation | None, job: Job
     db.commit()
 
 
+def _fail_unavailable(document_id: uuid.UUID, job_id: uuid.UUID, exc: Exception) -> None:
+    """OCR/LLM 서버 장애(503 계열)는 문서를 처리중에 멈춰두지 않고 FAILED + jobs.error로 남긴다(reprocess로 재시작)."""
+    db = SessionLocal()
+    try:
+        document, job = db.get(Document, document_id), db.get(Job, job_id)
+        if document and job:
+            _fail(db, document, None, job, job.current_step or "unknown", str(exc))
+    finally:
+        db.close()
+
+
 def run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
+    try:
+        _run_document_pipeline(document_id, job_id)
+    except (ai.OcrUnavailableError, ai.LLMUnavailableError) as exc:
+        _fail_unavailable(document_id, job_id, exc)
+
+
+def _run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
     db = SessionLocal()
     try:
         document = db.get(Document, document_id)
@@ -90,14 +113,13 @@ def run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
             norm_path = str(normalized_dir() / f"{document.id}.pdf")
             normalized = ai.normalize_to_pdf(document.original_path, document.original_format, norm_path)
         except (ai.UnsupportedFormatError, ValueError) as exc:
-            # ValueError: hwp5txt 등 외부 파서 실행 실패(손상된 파일 등)도 실패로 분류
+            # ValueError: 손상 파일·HWP 3.0 등 파싱 실패 + LibreOffice 변환 불가도 실패로 분류
             _fail(db, document, None, job, "normalize", str(exc))
             return
 
         document.normalized_pdf_path = normalized["normalized_pdf_path"]
         document.page_count = len(normalized["pages"])
-        has_text = any(p["has_text_layer"] for p in normalized["pages"])
-        document.source_type = "native" if has_text else "scan"
+        document.source_type = normalized["source_type"]  # 페이지별 라우터 판정(native/scan/mixed)
         for p in normalized["pages"]:
             db.add(Page(document_id=document.id, **p))
         db.commit()
@@ -112,12 +134,12 @@ def run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
         document.status, job.current_step, job.progress = "EXTRACTING", "extract", 60
         db.commit()
         fields = ai.extract_contract_fields(ocr_lines)
-        extraction = Extraction(document_id=document.id, status="AUTO", model_name="rule-based-v1")
+        extraction = Extraction(document_id=document.id, status="AUTO", model_name=ai.extraction_model_name())
         db.add(extraction)
         db.flush()
         for f in fields:
-            highlights = f.pop("highlights")
-            field_row = ExtractionField(extraction_id=extraction.id, label=_FIELD_LABELS[f["field_code"]], color_key=f["field_code"], **f)
+            highlights = f["highlights"]
+            field_row = ExtractionField(extraction_id=extraction.id, label=_FIELD_LABELS[f["field_code"]], color_key=f["field_code"], **_without(f, "highlights"))
             db.add(field_row)
             db.flush()
             for h in highlights:
@@ -126,7 +148,7 @@ def run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
 
         document.status, job.current_step, job.progress = "RISK", "risk", 85
         db.commit()
-        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db))
+        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db), policy_search=lambda q: search(db, q, None, 3))
         for r in risks:
             highlights = r.pop("highlights")
             risk_row = RiskFinding(document_id=document.id, status="OPEN", **r)
@@ -146,6 +168,13 @@ def run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
 
 def run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) -> None:
     """from_step(ocr|extract|risk)부터 이미 저장된 ocr_lines/fields를 재사용해 이후 단계만 다시 실행한다."""
+    try:
+        _run_reprocess(document_id, job_id, from_step)
+    except (ai.OcrUnavailableError, ai.LLMUnavailableError) as exc:
+        _fail_unavailable(document_id, job_id, exc)
+
+
+def _run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) -> None:
     db = SessionLocal()
     try:
         document = db.get(Document, document_id)
@@ -178,8 +207,8 @@ def run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) -> 
             extraction.status = "AUTO"
             fields = ai.extract_contract_fields(ocr_lines)
             for f in fields:
-                highlights = f.pop("highlights")
-                field_row = ExtractionField(extraction_id=extraction.id, label=_FIELD_LABELS[f["field_code"]], color_key=f["field_code"], **f)
+                highlights = f["highlights"]
+                field_row = ExtractionField(extraction_id=extraction.id, label=_FIELD_LABELS[f["field_code"]], color_key=f["field_code"], **_without(f, "highlights"))
                 db.add(field_row)
                 db.flush()
                 for h in highlights:
@@ -188,14 +217,17 @@ def run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) -> 
         else:
             extraction = db.query(Extraction).filter(Extraction.document_id == document.id).one()
             fields = [
-                {"field_code": f.field_code, "raw_value": f.raw_value, "normalized_value": f.normalized_value, "confidence": f.confidence, "mapping_method": f.mapping_method}
+                {
+                    "field_code": f.field_code, "raw_value": f.raw_value, "normalized_value": f.normalized_value, "confidence": f.confidence, "mapping_method": f.mapping_method,
+                    "highlights": [{"page_no": h.page_no, "bbox": h.bbox, "ocr_line_id": h.ocr_line_id} for h in f.highlights],
+                }
                 for f in extraction.fields
             ]
 
         document.status, job.current_step, job.progress = "RISK", "risk", 85
         db.commit()
         db.query(RiskFinding).filter(RiskFinding.document_id == document.id).delete()
-        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db))
+        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db), policy_search=lambda q: search(db, q, None, 3))
         for r in risks:
             highlights = r.pop("highlights")
             risk_row = RiskFinding(document_id=document.id, status="OPEN", **r)

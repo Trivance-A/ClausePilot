@@ -1,0 +1,15 @@
+# OCR serving (ai/ocr/server.py). Default: PP-OCRv5 korean on CPU.
+# GPU / PaddleOCR-VL: build with --build-arg PADDLE=paddlepaddle-gpu on a CUDA base and run with OCR_ENGINE=paddle_vl.
+FROM python:3.12-slim
+
+ARG PADDLE=paddlepaddle
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 tesseract-ocr tesseract-ocr-kor \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+RUN pip install --no-cache-dir ${PADDLE} paddleocr fastapi "uvicorn[standard]" opencv-python-headless numpy pymupdf
+
+COPY ai ./ai
+
+EXPOSE 8001
+CMD ["uvicorn", "ai.ocr.server:app", "--host", "0.0.0.0", "--port", "8001"]

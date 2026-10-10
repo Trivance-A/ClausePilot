@@ -17,16 +17,16 @@ SSE 챗봇 응답까지 — 아래 "구현 현황과 한계" 참고).
 
 ## 구현 현황과 한계
 
-외부 OCR/LLM API 키 없이도 전체 파이프라인이 end-to-end로 동작하도록, AI 모듈
-(`app/services/ai_client.py`)은 **결정적(deterministic) 규칙 기반 로직**으로 구현했습니다.
-실제 서비스로 확장할 때는 아래 표의 "현재 구현"을 실제 AI 모델로 교체하면 됩니다
-(인터페이스는 그대로 유지).
+계약서 파이프라인 AI 모듈은 `ai/` 패키지(AI·Document 파트)에 있고 `app/services/ai_client.py`가 위임합니다.
+LLM은 OpenAI 호환 엔드포인트 하나(`LLM_BASE_URL`, 예: Ollama `http://localhost:11434/v1`)로 전환하며,
+비워두면 외부 API 없이 규칙 기반으로 end-to-end 동작합니다(CI·통합 테스트 기본값). AI 모듈 단위 테스트는
+DB 없이 `pytest ai/tests` (실 LLM 확인: `LLM_LIVE_TEST=1 LLM_BASE_URL=... pytest ai/tests`).
 
 | 기능 | 현재 구현 | 한계 |
 |---|---|---|
-| 문서 정규화/OCR | PyMuPDF로 PDF 텍스트 레이어 직접 추출. hwp(pyhwp)/hwpx(zip+XML)/docx/xlsx도 텍스트를 추출해 PDF로 재구성 | 텍스트 레이어 없는 스캔본은 실제 OCR 엔진 미연동(빈 결과). hwp/hwpx/docx/xlsx는 원본 레이아웃 대신 텍스트를 순서대로 재배치(표는 한 줄로 단순화) |
-| 계약서 정보추출 | 키워드 매칭 + 정규식 (금액/날짜/사업자번호 등) | LLM 기반 추출보다 표현 변형에 취약 |
-| 위험조항 탐지 | `risk_rules` DB 테이블 기반 룰 엔진(관리자가 DB에서 직접 조정 가능), 통일된 score→severity 공식(≥0.75 HIGH/≥0.45 MEDIUM) | 룰에 없는 패턴은 탐지 못함 |
+| 문서 정규화/OCR | `ai/parser`·`ai/ocr`: hwp(olefile 레코드 파서)/hwpx(zip+lxml)/docx/xlsx 자체 파싱 + LibreOffice headless PDF 변환(doc/xls·HWP 3.0 포함, 깨진 변환은 파싱 텍스트와 대조해 거부), 이미지는 img2pdf. 페이지별 native/scan/mixed 라우터 → native는 PyMuPDF 라인+표 셀(r,c), scan은 300dpi 렌더→deskew→표 격자 검출→OCR(PaddleOCR-VL/PP-OCRv5/Tesseract, `OCR_BASE_URL` 서빙 컨테이너) | LibreOffice 없으면 텍스트 재배치 PDF로 폴백(레이아웃 손실). HWP 5.x 레이아웃 보존 변환은 H2Orestart 확장 필요. PaddleOCR-VL은 블록 bbox를 균등 분할한 근사 라인 bbox |
+| 계약서 정보추출 | `ai/extract`: OpenAI 호환 LLM(`LLM_BASE_URL`, JSON Schema 강제)이 8개 항목 + 근거 라인 ID 반환 → `ai/mapping` 4단 역매핑(llm_ref→exact→fuzzy≥85→재질의) → 금액(한글숫자)·날짜·보증기간(상대표현)·사업자번호(체크섬)·상호 정규화. `LLM_BASE_URL` 미설정 시 키워드+정규식 규칙 기반 | prompt_version·raw_llm_output·llm_cache 테이블 미연결(현재 extractions.model_name에 `모델@프롬프트버전`만 기록) |
+| 위험조항 탐지 | `ai/risk`: 룰 엔진(지체상금율·필수조항 누락·한글/숫자 금액 불일치·일자 모순) + LLM 엔진(독소조항·조항 간 모순·내부규정 위배=RAG 검색 top-3 대조) 병렬 실행, 근거 라인 없는 LLM 결과는 버림. 룰 정의는 `ai/risk/rules.yaml`(03_데이터정의 §6.1). LLM 미설정 시 DB `risk_rules`의 keyword 룰이 LLM 룰을 대신함 | DB `risk_rules` 테이블이 03_데이터정의 형태(code·engine·params·default_severity)가 아니라 문서형 룰은 YAML 시드 사용 |
 | 규정 구조 파싱 | 정규식 기반 장/조/항 파서 | "제N장/제N조/①~⑮" 형식 외 구조는 인식 못함 |
 | 규정 검색 | **로컬 임베딩**(fastembed, `paraphrase-multilingual-MiniLM-L12-v2`, 384d, pgvector+HNSW 인덱스 저장) 코사인 유사도 + **Kiwi 형태소 분석** 기반 BM25 → RRF 결합. 청킹은 조(article) 단위로 하위 항을 합쳐 1청크 | bge-m3(1024d)·bge-reranker 대신 경량 모델로 대체, cross-encoder rerank 미도입(RRF 순위를 그대로 사용) |
 | 챗봇 답변 생성 | 검색된 조항을 그대로 인용하는 추출형 응답 | 자연스러운 문장 생성은 안 됨(LLM 미연동) |

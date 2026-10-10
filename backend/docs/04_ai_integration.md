@@ -1,5 +1,22 @@
 # 04. AI 모듈 연동 인터페이스
 
+> 3차 개정 (AI·Document): 계약서 파이프라인 함수 내부를 `backend/ai/` 패키지로 교체했다. 시그니처는 유지하고
+> 선택 인자만 추가했다 — `run_ocr(pdf_path, engine=None)`, `detect_risks(..., policy_search=None)`.
+> `normalize_to_pdf` 반환값에 `source_type`(native/scan/mixed)·`parsed_text_path`가 추가됐다.
+>
+> | 모듈 | 내용 (05_OCR_Pipeline 설계서 단계) |
+> |---|---|
+> | `ai/parser` | ① 포맷 정규화: hwp(olefile)/hwpx(zip+lxml)/docx/xlsx 파싱 → `{id}.parsed_text.json`, LibreOffice headless → PDF, img2pdf |
+> | `ai/ocr` | ③ 라우터(텍스트≥50자·폰트·한글비율) ④ native 라인/표 셀 · scan OCR(deskew·표 격자·엔진) ⑤ 읽기 순서·조각 병합·`L{page}-{line}` |
+> | `ai/ocr/server.py` | OCR 서빙(`POST /ocr`, `GET /health`) — `docker compose --profile gpu`의 `ocr` 컨테이너, worker는 `OCR_BASE_URL`로 호출 |
+> | `ai/extract` | ⑥ LLM 구조화 추출(JSON Schema, 5p 초과 시 키워드 ±10줄) + ⑧ 정규화 |
+> | `ai/mapping` | ⑦ bbox 역매핑 llm_ref → exact → fuzzy(rapidfuzz ≥85) → 재질의, 부분 bbox, 실패 원인 로그 |
+> | `ai/risk` | ⑨ 룰 4종 + LLM 3종 병렬, 근거 라인 → bbox, 중복 병합, `rules.yaml` 시드 |
+> | `ai/llm.py` | OpenAI 호환 클라이언트(temperature 0, 120s, 3회 지수 백오프, `cache` = sha256(model+prompt_version+prompt)) |
+>
+> 환경변수: `LLM_BASE_URL`(비우면 규칙 기반 오프라인 모드) · `LLM_MODEL` · `LLM_API_KEY` · `OCR_ENGINE`(auto|paddle_vl|paddle|tesseract) · `OCR_BASE_URL` · `OCR_DPI`.
+> 장애: `OcrUnavailableError`/`LLMUnavailableError`(API 503 OCR_UNAVAILABLE/LLM_UNAVAILABLE) → 문서 FAILED + jobs.error, reprocess로 재시작.
+
 Backend는 AI·Document 파트가 제공하는 함수/모듈을 `app/services/ai_client.py`를 통해 호출한다.
 인터페이스(함수 시그니처)는 여기서 고정하고, **내부 구현은 이미 규칙 기반(정규식/BM25 등) 로직으로
 채워져 있다** — 외부 OCR/LLM API 키 없이도 전체 파이프라인이 end-to-end로 동작하도록 하기 위해서다.
