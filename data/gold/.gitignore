@@ -1,0 +1,2 @@
+# regenerate with: PYTHONPATH=backend python -m eval.make_synthetic_gold (deterministic, seeded)
+synthetic/*.pdf
