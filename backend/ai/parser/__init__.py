@@ -170,11 +170,10 @@ def conversion_matches(pdf_path: str, blocks: list[Block]) -> bool:
 def render_lines_to_pdf(lines: list[str], out_pdf: str) -> None:
     """Fallback without LibreOffice: flow the parsed text onto A4 pages with the built-in CJK font."""
     width, height, margin, size, leading = 595, 842, 50, 10, 16
-    font = fitz.Font("korea")
     doc = fitz.open()
     page, y = doc.new_page(width=width, height=height), margin + size
     for line in lines:
-        for wrapped in _wrap(line, font, size, width - 2 * margin):
+        for wrapped in _wrap(line, size, width - 2 * margin):
             if y > height - margin:
                 page, y = doc.new_page(width=width, height=height), margin + size
             page.insert_text((margin, y), wrapped, fontsize=size, fontname="korea-s")
@@ -183,10 +182,12 @@ def render_lines_to_pdf(lines: list[str], out_pdf: str) -> None:
     doc.close()
 
 
-def _wrap(text: str, font, size: float, max_width: float) -> list[str]:
+def _wrap(text: str, size: float, max_width: float) -> list[str]:
+    # measure with the font actually written (korea-s: every glyph, ASCII included, is full-width); the proportional
+    # fitz.Font("korea") metrics under-measured ASCII and the overflow past the page edge was dropped from the text layer
     out, cur = [], ""
     for ch in text:
-        if cur and font.text_length(cur + ch, fontsize=size) > max_width:
+        if cur and fitz.get_text_length(cur + ch, fontname="korea-s", fontsize=size) > max_width:
             out.append(cur)
             cur = ch.lstrip()
         else:

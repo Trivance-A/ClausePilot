@@ -148,6 +148,15 @@ def test_hwpx_without_libreoffice_falls_back_to_text_pdf(tmp_path, monkeypatch):
         assert "계약금액 | 금 삼억원정" in doc[0].get_text()
 
 
+def test_text_fallback_wraps_ascii_heavy_lines_inside_the_page(tmp_path):
+    line = "5. 계약금액 : 일금 350,000,000원정 (VAT included, see Article 12-3 of the General Conditions) " * 3
+    parser.render_lines_to_pdf([line], str(tmp_path / "w.pdf"))
+    with fitz.open(tmp_path / "w.pdf") as doc:
+        page = doc[0]
+        assert all(ln["bbox"][2] <= page.rect.width - 49 for b in page.get_text("dict")["blocks"] for ln in b["lines"])
+        assert "".join(page.get_text().split()) == "".join(line.split())  # no character lost past the right edge
+
+
 def test_broken_native_parse_without_libreoffice_fails_clearly(tmp_path, monkeypatch):
     monkeypatch.setattr(parser, "libreoffice_to_pdf", lambda src, out: False)
     src = tmp_path / "a.hwp"
