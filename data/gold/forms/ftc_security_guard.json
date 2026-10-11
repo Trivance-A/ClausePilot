@@ -1,0 +1,75 @@
+{
+  "doc_id": "ftc_security_guard",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_security_guard.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "하천 수질 모니터링 용역",
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.32542,
+        0.52101,
+        0.33967
+      ],
+      "raw_text": "하천 수질 모니터링 용역"
+    },
+    "contract_amount": {
+      "value": 387000000,
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.70546,
+        0.7563,
+        0.71971
+      ],
+      "raw_text": "일금 삼억팔천칠백만원정 (￦387,000,000)"
+    },
+    "guarantee_amount": null,
+    "contract_date": {
+      "value": "2026-04-02",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.76247,
+        0.26891,
+        0.77672
+      ],
+      "raw_text": "2026년 4월 2일"
+    },
+    "performance_due_date": {
+      "value": "2026-10-09",
+      "page": 1,
+      "bbox": [
+        0.35294,
+        0.64846,
+        0.55462,
+        0.66271
+      ],
+      "raw_text": "2026년 10월 9일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "(주)한빛건설",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.80048,
+        0.38655,
+        0.81473
+      ],
+      "raw_text": "(주)한빛건설"
+    },
+    "creditor_biz_no": {
+      "value": "438-26-09434",
+      "page": 2,
+      "bbox": [
+        0.21849,
+        0.81948,
+        0.42017,
+        0.83373
+      ],
+      "raw_text": "438-26-09434"
+    }
+  }
+}

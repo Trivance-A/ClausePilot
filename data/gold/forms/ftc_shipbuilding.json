@@ -1,0 +1,85 @@
+{
+  "doc_id": "ftc_shipbuilding",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_shipbuilding.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "제설용 염화칼슘 구매",
+      "page": 1,
+      "bbox": [
+        0.28571,
+        0.32542,
+        0.47059,
+        0.33967
+      ],
+      "raw_text": "제설용 염화칼슘 구매"
+    },
+    "contract_amount": {
+      "value": 711000000,
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.40143,
+        0.72269,
+        0.41568
+      ],
+      "raw_text": "일금 칠억천백만원정 (￦711,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 106650000,
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.1924,
+        0.90756,
+        0.22565
+      ],
+      "raw_text": "일금 일억육백육십오만원정 (￦106,650,000)"
+    },
+    "contract_date": {
+      "value": "2026-04-03",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.76247,
+        0.26891,
+        0.77672
+      ],
+      "raw_text": "2026년 4월 3일"
+    },
+    "performance_due_date": {
+      "value": "2027-04-10",
+      "page": 1,
+      "bbox": [
+        0.38655,
+        0.38242,
+        0.58824,
+        0.39667
+      ],
+      "raw_text": "2027년 4월 10일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "대성테크 주식회사",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.80048,
+        0.42017,
+        0.81473
+      ],
+      "raw_text": "대성테크 주식회사"
+    },
+    "creditor_biz_no": {
+      "value": "140-87-10466",
+      "page": 2,
+      "bbox": [
+        0.2521,
+        0.81948,
+        0.45378,
+        0.83373
+      ],
+      "raw_text": "140-87-10466"
+    }
+  }
+}

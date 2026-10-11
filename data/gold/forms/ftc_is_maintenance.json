@@ -1,0 +1,85 @@
+{
+  "doc_id": "ftc_is_maintenance",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_is_maintenance.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "청사 시설 경비 용역",
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.32542,
+        0.48739,
+        0.33967
+      ],
+      "raw_text": "청사 시설 경비 용역"
+    },
+    "contract_amount": {
+      "value": 466000000,
+      "page": 1,
+      "bbox": [
+        0.26891,
+        0.43943,
+        0.72269,
+        0.45368
+      ],
+      "raw_text": "일금 사억육천육백만원정 (￦466,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 46600000,
+      "page": 2,
+      "bbox": [
+        0.40336,
+        0.1734,
+        0.58824,
+        0.18765
+      ],
+      "raw_text": "46,600,000원"
+    },
+    "contract_date": {
+      "value": "2026-01-04",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.74347,
+        0.26891,
+        0.75772
+      ],
+      "raw_text": "2026년 1월 4일"
+    },
+    "performance_due_date": {
+      "value": "2026-09-21",
+      "page": 1,
+      "bbox": [
+        0.58824,
+        0.36342,
+        0.78992,
+        0.37767
+      ],
+      "raw_text": "2026년 9월 21일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "청람전기(주)",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.78147,
+        0.38655,
+        0.79572
+      ],
+      "raw_text": "청람전기(주)"
+    },
+    "creditor_biz_no": {
+      "value": "274-59-51578",
+      "page": 2,
+      "bbox": [
+        0.21849,
+        0.80048,
+        0.42017,
+        0.81473
+      ],
+      "raw_text": "274-59-51578"
+    }
+  }
+}

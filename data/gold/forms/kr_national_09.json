@@ -1,0 +1,75 @@
+{
+  "doc_id": "kr_national_09",
+  "source_type": "native",
+  "source": "data/samples/law/kr_national_09.pdf",
+  "labels": {
+    "contract_name": {
+      "value": "교통량 조사 및 분석 용역",
+      "page": 1,
+      "bbox": [
+        0.30446,
+        0.2424,
+        0.44858,
+        0.25716
+      ],
+      "raw_text": "교통량 조사 및 분석 용역"
+    },
+    "contract_amount": {
+      "value": 874000000,
+      "page": 1,
+      "bbox": [
+        0.30446,
+        0.2734,
+        0.53036,
+        0.28816
+      ],
+      "raw_text": "금 팔억칠천사백만원정(￦874,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 131100000,
+      "page": 1,
+      "bbox": [
+        0.30446,
+        0.33554,
+        0.53036,
+        0.3503
+      ],
+      "raw_text": "금 일억삼천백십만원정(￦131,100,000)"
+    },
+    "contract_date": {
+      "value": "2026-06-04",
+      "page": 1,
+      "bbox": [
+        0.31275,
+        0.64915,
+        0.37315,
+        0.66391
+      ],
+      "raw_text": "2026. 6. 4."
+    },
+    "performance_due_date": {
+      "value": "2026-11-28",
+      "page": 1,
+      "bbox": [
+        0.38603,
+        0.39768,
+        0.46079,
+        0.41245
+      ],
+      "raw_text": "2026. 11. 28."
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "다온시 교육지원청 교육장",
+      "page": 1,
+      "bbox": [
+        0.30446,
+        0.14797,
+        0.45481,
+        0.16273
+      ],
+      "raw_text": "다온시 교육지원청 교육장"
+    },
+    "creditor_biz_no": null
+  }
+}
