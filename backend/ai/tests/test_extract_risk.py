@@ -368,3 +368,14 @@ def test_live_llm_extraction(lines):
     assert by["contract_amount"]["normalized_value"] == {"amount": 350_000_000}
     assert by["contract_date"]["normalized_value"] == {"date": "2026-03-05"}
     assert sum(x["mapping_method"] != "none" for x in fields) >= 7
+
+
+def test_llm_client_vllm_guided_json_and_fenced_output(monkeypatch):
+    from ai.llm import parse_json
+
+    assert parse_json('```json\n{"a": 1}\n```') == {"a": 1}
+    sent = []
+    client = LLMClient("http://llm:8000/v1", "Qwen/Qwen2.5-14B-Instruct", guided_json=True)
+    monkeypatch.setattr(client, "_post", lambda path, body: sent.append(body) or {"choices": [{"message": {"content": "{}"}}]})
+    client.chat_json("s", "p", {"type": "object"}, prompt_version="v1")
+    assert sent[0]["guided_json"] == {"type": "object"} and "response_format" not in sent[0]

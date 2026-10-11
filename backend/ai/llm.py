@@ -32,6 +32,14 @@ def prompt_hash(model: str, prompt_version: str, prompt: str) -> str:
     return hashlib.sha256((model + prompt_version + prompt).encode("utf-8")).hexdigest()
 
 
+def parse_json(text: str) -> dict:
+    """Commercial APIs that ignore response_format may wrap the JSON in a ```json fence."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1].rsplit("```", 1)[0] if "\n" in text else text.strip("`")
+    return json.loads(text)
+
+
 class LLMClient:
     def __init__(
         self,
@@ -43,6 +51,7 @@ class LLMClient:
         retries: int = 3,
         backoff: float = 1.0,
         cache: MutableMapping[str, Any] | None = None,
+        guided_json: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -51,6 +60,7 @@ class LLMClient:
         self.retries = retries
         self.backoff = backoff
         self.cache = cache  # backend may pass a DB-backed mapping over the llm_cache table
+        self.guided_json = guided_json  # vLLM: schema via `guided_json` (05_개발환경 §2), others: response_format
 
     @classmethod
     def from_env(cls, cache: MutableMapping[str, Any] | None = None) -> "LLMClient | None":
@@ -58,7 +68,7 @@ class LLMClient:
         base_url = os.getenv("LLM_BASE_URL")
         if not base_url:
             return None
-        return cls(base_url, env_model(), os.getenv("LLM_API_KEY", ""), cache=cache)
+        return cls(base_url, env_model(), os.getenv("LLM_API_KEY", ""), cache=cache, guided_json=os.getenv("LLM_GUIDED_JSON") == "1")
 
     def chat_json(self, system: str, prompt: str, schema: dict, *, prompt_version: str, name: str = "output") -> dict:
         key = prompt_hash(self.model, prompt_version, system + "\n" + prompt)
@@ -69,12 +79,15 @@ class LLMClient:
             "model": self.model,
             "temperature": 0,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
         }
+        if self.guided_json:
+            body["guided_json"] = schema
+        else:
+            body["response_format"] = {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}
         last_error: Exception | None = None
         for attempt in range(self.retries):
             try:
-                result = json.loads(self._post("/chat/completions", body)["choices"][0]["message"]["content"])
+                result = parse_json(self._post("/chat/completions", body)["choices"][0]["message"]["content"])
                 if self.cache is not None:
                     self.cache[key] = result
                 return result
