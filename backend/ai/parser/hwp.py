@@ -47,7 +47,9 @@ def para_text(payload: bytes) -> str:
             if code == 9:
                 out.append("\t")
             i += 8
-    return "".join(out).replace("\r", "")
+    # PARA_TEXT is UTF-16: characters outside the BMP arrive as surrogate pairs (two code units) -> join them
+    text = "".join(out).encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
+    return text.replace("\r", "")
 
 
 def parse_section(data: bytes) -> list[dict]:

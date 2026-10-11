@@ -42,6 +42,12 @@ def test_hwp_para_text_skips_inline_controls():
     assert para_text(text("계약") + tab + text("금액") + table_ctrl + struct.pack("<H", 13)) == "계약\t금액\n"
 
 
+def test_hwp_para_text_joins_surrogate_pairs():
+    # non-BMP chars (e.g. U+1D7CF in FTC forms) are two UTF-16 units; lone surrogates broke the parsed_text.json write
+    assert para_text(text("①\U0001d7cf항")) == "①\U0001d7cf항"
+    assert para_text(struct.pack("<H", 0xD835) + text("가")) == "�가"
+
+
 def test_hwp_section_paragraphs_and_table_cells():
     def cell(row, col):
         return struct.pack("<HHI", 1, 0, 0) + struct.pack("<HHHH", col, row, 1, 1)
