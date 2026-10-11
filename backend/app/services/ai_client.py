@@ -11,8 +11,8 @@ import math
 import re
 import uuid
 from collections import Counter
-from collections.abc import AsyncIterator, Callable
-from typing import Any, TypedDict
+from collections.abc import AsyncIterator, Callable, MutableMapping
+from typing import Any, NotRequired, TypedDict
 
 from rank_bm25 import BM25Okapi
 
@@ -194,18 +194,37 @@ def _apply_fallbacks(ocr_lines: list[OcrLineDict], results: list[ExtractionField
                 break
 
 
+RULE_BASED_VERSION = "rule-based-v1"
+LLMCache = MutableMapping[str, Any]
+
+
+class ExtractionMetaDict(TypedDict):
+    """extractions 행 메타 (03_데이터정의 §5.5)."""
+
+    model_name: str
+    prompt_version: str
+    raw_llm_output: dict | None
+
+
 def extraction_model_name() -> str:
     llm = LLMClient.from_env()
-    return f"{llm.model}@{ai_extract.PROMPT_VERSION}" if llm else "rule-based-v1"
+    return f"{llm.model}@{ai_extract.PROMPT_VERSION}" if llm else RULE_BASED_VERSION
+
+
+def extract_contract_fields_with_meta(
+    ocr_lines: list[OcrLineDict], llm_cache: LLMCache | None = None
+) -> tuple[list[ExtractionFieldDict], ExtractionMetaDict]:
+    """LLM 구조화 추출 + bbox 4단 역매핑 + 정규화, 그리고 extractions 행 메타(model_name·prompt_version·raw_llm_output).
+    LLM 미설정이면 규칙 기반 대체. llm_cache는 llm_cache 테이블 매핑(app/services/llm_cache.py)."""
+    llm = LLMClient.from_env(cache=llm_cache)
+    if llm is None:
+        return _extract_rule_based(ocr_lines), {"model_name": RULE_BASED_VERSION, "prompt_version": RULE_BASED_VERSION, "raw_llm_output": None}
+    fields, meta = ai_extract.extract_fields(ocr_lines, llm)
+    return fields, {"model_name": meta["model_name"], "prompt_version": meta["prompt_version"], "raw_llm_output": meta["raw_llm_output"]}
 
 
 def extract_contract_fields(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:
-    """LLM 구조화 추출 + bbox 4단 역매핑 + 정규화. LLM 미설정이면 규칙 기반 대체."""
-    llm = LLMClient.from_env()
-    if llm is None:
-        return _extract_rule_based(ocr_lines)
-    fields, _meta = ai_extract.extract_fields(ocr_lines, llm)
-    return fields
+    return extract_contract_fields_with_meta(ocr_lines)[0]
 
 
 def _extract_rule_based(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:
@@ -347,12 +366,33 @@ DEFAULT_RISK_RULES: list[dict] = [
 class RiskRuleDict(TypedDict):
     rule_code: str
     category: str
-    rule_type: str  # field_missing | keyword | penalty_rate | period_contradiction
+    rule_type: str  # field_missing | keyword | penalty_rate | period_contradiction | doc
     title: str
     description: str
     keywords: list[str] | None
     field_code: str | None
     base_score: float | None
+    engine: NotRequired[str | None]  # rule | llm: 03_데이터정의 §6.1 문서형 룰. None = 기존(오프라인 keyword) 행
+    params: NotRequired[dict | None]
+    default_severity: NotRequired[str | None]
+
+
+def doc_risk_rules() -> list[dict]:
+    """ai/risk/rules.yaml(03_데이터정의 §6.1)을 risk_rules 행 형태로. app/core/seed.py가 시드한다."""
+    return [
+        {
+            "rule_code": r["code"],
+            "category": r["category"],
+            "rule_type": "doc",
+            "title": r["name"],
+            "description": r["name"],
+            "engine": r["engine"],
+            "params": r.get("params") or {},
+            "default_severity": r.get("default_severity"),
+            "enabled": r.get("is_active", True),
+        }
+        for r in ai_risk.load_rules()
+    ]
 
 
 def detect_risks(
@@ -360,13 +400,26 @@ def detect_risks(
     fields: list[ExtractionFieldDict],
     rules: list[RiskRuleDict],
     policy_search: Callable[[str], list[dict]] | None = None,
+    llm_cache: LLMCache | None = None,
 ) -> list[RiskFindingDict]:
     """룰 엔진(PENALTY_RATE_HIGH·MISSING_ARTICLE·AMOUNT_MISMATCH·DATE_INCONSISTENT) + LLM 엔진(TOXIC_CLAUSE·
     CONTRADICTION_LLM·POLICY_VIOLATION) 병렬. policy_search(query)->규정 청크 목록은 Backend가 RAG 검색으로 주입.
-    shortcut: 03_데이터정의 형태의 룰은 ai/risk/rules.yaml 시드를 쓴다. risk_rules 테이블이 code/engine/params 스키마로
-    바뀌면 그 행을 그대로 넘기면 된다."""
-    llm = LLMClient.from_env()
-    findings = ai_risk.detect_risks(ocr_lines, fields, llm=llm, policy_search=policy_search)
+    rules 중 engine이 채워진 행(DB risk_rules의 문서형 룰, 활성 행만 전달됨)을 YAML 형태로 바꿔 ai.risk에 넘긴다."""
+    llm = LLMClient.from_env(cache=llm_cache)
+    doc_rules = [
+        {
+            "code": r["rule_code"],
+            "name": r["title"],
+            "category": r["category"],
+            "engine": r["engine"],
+            "params": r.get("params") or {},
+            "default_severity": r.get("default_severity"),
+            "is_active": True,
+        }
+        for r in rules
+        if r.get("engine")
+    ]
+    findings = ai_risk.detect_risks(ocr_lines, fields, rules=doc_rules, llm=llm, policy_search=policy_search)
     if llm is None:  # 오프라인: keyword 룰이 LLM 룰(독소·규정위배)을 대신한다
         findings += _detect_risks_keyword(ocr_lines, fields, [r for r in rules if r["rule_type"] == "keyword"])
     return findings

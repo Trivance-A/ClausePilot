@@ -4,8 +4,10 @@ api 프로세스의 요청 컨텍스트와는 별도 프로세스/세션이므�
 import uuid
 from datetime import datetime, timezone
 
+import pymupdf as fitz
+
 import app.models  # noqa: F401 - worker 프로세스가 이 모듈만 임포트해도 전체 모델이 Base.metadata에 등록되게 함
-from app.core.storage import normalized_dir
+from app.core.storage import normalized_dir, pages_dir
 from app.db.session import SessionLocal
 from app.models.document import Document, OcrLine, Page
 from app.models.extraction import Extraction, ExtractionField
@@ -15,7 +17,10 @@ from app.models.regulation import Regulation, RegulationChunk, RegulationNode
 from app.models.risk import RiskFinding
 from app.models.risk_rule import RiskRule
 from app.services import ai_client as ai
+from app.services.llm_cache import DbLlmCache
 from app.services.search import search
+
+PAGE_IMAGE_DPI = 200  # FR-01 / 03_데이터정의 §5.3 pages.image_path
 
 _FIELD_LABELS = ai.FIELD_LABELS
 
@@ -54,9 +59,24 @@ def _active_risk_rules(db) -> list[ai.RiskRuleDict]:
             "keywords": r.keywords,
             "field_code": r.field_code,
             "base_score": r.base_score,
+            "engine": r.engine,
+            "params": r.params,
+            "default_severity": r.default_severity,
         }
         for r in rows
     ]
+
+
+def _render_page_images(pdf_path: str, document_id: uuid.UUID) -> dict[int, str]:
+    """정규화 PDF의 각 페이지를 200dpi PNG로 한 번 렌더링해 저장하고 {page_no: path}를 돌려준다."""
+    out_dir = pages_dir(document_id)
+    paths: dict[int, str] = {}
+    with fitz.open(pdf_path) as doc:
+        for i, page in enumerate(doc, start=1):
+            path = out_dir / f"{i}.png"
+            page.get_pixmap(dpi=PAGE_IMAGE_DPI).save(str(path))
+            paths[i] = str(path)
+    return paths
 
 
 def _without(d: dict, key: str) -> dict:
@@ -120,8 +140,9 @@ def _run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
         document.normalized_pdf_path = normalized["normalized_pdf_path"]
         document.page_count = len(normalized["pages"])
         document.source_type = normalized["source_type"]  # 페이지별 라우터 판정(native/scan/mixed)
+        images = _render_page_images(document.normalized_pdf_path, document.id)
         for p in normalized["pages"]:
-            db.add(Page(document_id=document.id, **p))
+            db.add(Page(document_id=document.id, image_path=images.get(p["page_no"]), **p))
         db.commit()
 
         document.status, job.current_step, job.progress = "OCR", "ocr", 35
@@ -133,8 +154,8 @@ def _run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
 
         document.status, job.current_step, job.progress = "EXTRACTING", "extract", 60
         db.commit()
-        fields = ai.extract_contract_fields(ocr_lines)
-        extraction = Extraction(document_id=document.id, status="AUTO", model_name=ai.extraction_model_name())
+        fields, meta = ai.extract_contract_fields_with_meta(ocr_lines, DbLlmCache())
+        extraction = Extraction(document_id=document.id, status="AUTO", **meta)
         db.add(extraction)
         db.flush()
         for f in fields:
@@ -148,7 +169,7 @@ def _run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
 
         document.status, job.current_step, job.progress = "RISK", "risk", 85
         db.commit()
-        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db), policy_search=lambda q: search(db, q, None, 3))
+        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db), policy_search=lambda q: search(db, q, None, 3), llm_cache=DbLlmCache())
         for r in risks:
             highlights = r.pop("highlights")
             risk_row = RiskFinding(document_id=document.id, status="OPEN", **r)
@@ -205,7 +226,8 @@ def _run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) ->
             extraction = db.query(Extraction).filter(Extraction.document_id == document.id).one()
             db.query(ExtractionField).filter(ExtractionField.extraction_id == extraction.id).delete()
             extraction.status = "AUTO"
-            fields = ai.extract_contract_fields(ocr_lines)
+            fields, meta = ai.extract_contract_fields_with_meta(ocr_lines, DbLlmCache())
+            extraction.model_name, extraction.prompt_version, extraction.raw_llm_output = meta["model_name"], meta["prompt_version"], meta["raw_llm_output"]
             for f in fields:
                 highlights = f["highlights"]
                 field_row = ExtractionField(extraction_id=extraction.id, label=_FIELD_LABELS[f["field_code"]], color_key=f["field_code"], **_without(f, "highlights"))
@@ -227,7 +249,7 @@ def _run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) ->
         document.status, job.current_step, job.progress = "RISK", "risk", 85
         db.commit()
         db.query(RiskFinding).filter(RiskFinding.document_id == document.id).delete()
-        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db), policy_search=lambda q: search(db, q, None, 3))
+        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db), policy_search=lambda q: search(db, q, None, 3), llm_cache=DbLlmCache())
         for r in risks:
             highlights = r.pop("highlights")
             risk_row = RiskFinding(document_id=document.id, status="OPEN", **r)
