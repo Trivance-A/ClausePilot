@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime, time
+from pathlib import Path
 from typing import Literal
 
 import pymupdf as fitz
@@ -177,10 +178,14 @@ async def get_document_pdf(document_id: uuid.UUID, db: Session = Depends(get_db)
 @router.get("/{document_id}/pages/{page_no}/image")
 async def get_document_page_image(document_id: uuid.UUID, page_no: int, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
     """페이지를 200dpi PNG로 렌더링해 반환한다 (front 폴더의 pdf.js Viewer는 PDF를 직접 렌더링해 호출하지
-    않지만, 명세서 03_API_명세서.docx에 정의되어 있어 구현 — 서버사이드 썸네일/미리보기 등에 쓸 수 있다)."""
+    않지만, 명세서 03_API_명세서.docx에 정의되어 있어 구현 — 서버사이드 썸네일/미리보기 등에 쓸 수 있다).
+    파이프라인이 미리 렌더링한 pages.image_path가 있으면 그 파일을, 없으면 즉석 렌더링한다."""
     document = _get_document_or_404(db, document_id)
     if not document.normalized_pdf_path:
         raise ApiError(409, "INVALID_STATE", "아직 정규화된 PDF가 없습니다")
+    page = db.query(Page).filter(Page.document_id == document_id, Page.page_no == page_no).first()
+    if page and page.image_path and Path(page.image_path).is_file():
+        return FileResponse(page.image_path, media_type="image/png")
 
     doc = fitz.open(document.normalized_pdf_path)
     try:

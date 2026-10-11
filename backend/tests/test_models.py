@@ -12,6 +12,7 @@ from app.models import (  # noqa: F401 (모델 등록을 위해 import)
     guarantee,
     highlight,
     job,
+    llm_cache,
     regulation,
     risk,
     risk_rule,
@@ -37,6 +38,7 @@ EXPECTED_TABLES = {
     "citations",
     "message_feedback",
     "jobs",
+    "llm_cache",
     "eval_runs",
 }
 

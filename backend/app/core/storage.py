@@ -17,6 +17,10 @@ def normalized_dir() -> Path:
     return _ensure_dir(Path(settings.storage_dir) / "normalized")
 
 
+def pages_dir(document_id: uuid.UUID) -> Path:
+    return _ensure_dir(Path(settings.storage_dir) / "pages" / str(document_id))
+
+
 def regulations_dir() -> Path:
     return _ensure_dir(Path(settings.storage_dir) / "regulations")
 

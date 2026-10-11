@@ -44,6 +44,7 @@ class Page(Base):
     height_pt: Mapped[float] = mapped_column(Float)
     rotation: Mapped[int] = mapped_column(Integer, default=0)
     has_text_layer: Mapped[bool] = mapped_column(Boolean, default=False)
+    image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)  # 200dpi PNG rendered once by the pipeline (FR-01)
 
     document: Mapped["Document"] = relationship(back_populates="pages")
 

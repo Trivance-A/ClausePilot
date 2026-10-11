@@ -30,6 +30,9 @@ class Extraction(Base):
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), unique=True)
     status: Mapped[str] = mapped_column(String, default="AUTO")
     model_name: Mapped[str] = mapped_column(String)
+    # 03_데이터정의 §5.5: prompt version + raw LLM response (null in the offline rule-based mode)
+    prompt_version: Mapped[str] = mapped_column(String(20), default="rule-based-v1", server_default="rule-based-v1")
+    raw_llm_output: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     fields: Mapped[list["ExtractionField"]] = relationship(back_populates="extraction")

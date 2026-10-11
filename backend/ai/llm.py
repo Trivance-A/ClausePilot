@@ -17,6 +17,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MODEL = "qwen2.5:7b"
+
+
+def env_model() -> str:
+    return os.getenv("LLM_MODEL", DEFAULT_MODEL)
+
 
 class LLMUnavailableError(RuntimeError):
     """LLM endpoint unreachable or kept returning invalid JSON (API: 503 LLM_UNAVAILABLE)."""
@@ -52,7 +58,7 @@ class LLMClient:
         base_url = os.getenv("LLM_BASE_URL")
         if not base_url:
             return None
-        return cls(base_url, os.getenv("LLM_MODEL", "qwen2.5:7b"), os.getenv("LLM_API_KEY", ""), cache=cache)
+        return cls(base_url, env_model(), os.getenv("LLM_API_KEY", ""), cache=cache)
 
     def chat_json(self, system: str, prompt: str, schema: dict, *, prompt_version: str, name: str = "output") -> dict:
         key = prompt_hash(self.model, prompt_version, system + "\n" + prompt)

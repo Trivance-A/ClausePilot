@@ -16,6 +16,8 @@ class RiskRule(Base):
     - period_contradiction: 보증기간 시작>종료 같은 구조적 모순 검사(값 비교라 키워드 매칭이 아님,
       base_score를 그대로 점수로 사용). 실제 판정 로직은 ai_client.detect_risks에 남아있고,
       이 행은 그 규칙의 존재와 점수를 문서화·조정하기 위한 용도다.
+    - doc: 03_데이터정의 §6.1 형태의 룰(ai/risk/rules.yaml 시드). engine(rule|llm)·params·default_severity를 그대로
+      ai.risk.detect_risks에 넘긴다. engine이 채워진 행이 문서형 룰이고, engine이 null인 기존 행은 오프라인 keyword 역할만 한다.
     severity는 score로부터 통일된 공식으로 계산한다: score>=0.75 HIGH, >=0.45 MEDIUM, 그 외 LOW."""
 
     __tablename__ = "risk_rules"
@@ -30,3 +32,6 @@ class RiskRule(Base):
     field_code: Mapped[str | None] = mapped_column(String, nullable=True)
     base_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    engine: Mapped[str | None] = mapped_column(String(5), nullable=True)  # rule | llm (null = legacy offline row)
+    params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    default_severity: Mapped[str | None] = mapped_column(String(10), nullable=True)

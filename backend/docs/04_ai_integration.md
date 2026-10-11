@@ -14,6 +14,16 @@
 > | `ai/risk` | ⑨ 룰 4종 + LLM 3종 병렬, 근거 라인 → bbox, 중복 병합, `rules.yaml` 시드 |
 > | `ai/llm.py` | OpenAI 호환 클라이언트(temperature 0, 120s, 3회 지수 백오프, `cache` = sha256(model+prompt_version+prompt)) |
 >
+> 4차 개정 (03_데이터정의 정합, alembic `fff5a737ea1f`): 기존 함수는 그대로 두고 아래를 추가했다.
+>
+> | 추가 | 내용 |
+> |---|---|
+> | `extract_contract_fields_with_meta(ocr_lines, llm_cache=None)` | `(fields, meta)` — meta = `model_name`·`prompt_version`·`raw_llm_output`(오프라인은 `rule-based-v1`·`rule-based-v1`·null). 파이프라인이 `extractions`에 저장. `extract_contract_fields(ocr_lines)`는 fields만 반환(호환) |
+> | `detect_risks(..., llm_cache=None)` | `rules` 중 `engine`이 채워진 행(DB `risk_rules`의 문서형 룰, §6.1 7종)을 YAML 형태(code·name·category·engine·params·default_severity·is_active)로 바꿔 `ai.risk.detect_risks(rules=...)`에 전달 — 관리자가 비활성화한 룰은 실행되지 않음. `engine`이 null인 기존 행은 오프라인 keyword 역할만 유지 |
+> | `doc_risk_rules()` | `ai/risk/rules.yaml` → `risk_rules` 행(title=name, enabled=is_active, rule_type `doc`). `app/core/seed.py`가 앱 시작 시 없는 code만 추가, 같은 code(PENALTY_RATE_HIGH)의 기존 행은 engine·params·default_severity만 채움 |
+> | `app/services/llm_cache.py` `DbLlmCache` | `llm_cache` 테이블(prompt_hash = `ai.llm.prompt_hash(model, prompt_version, prompt)`)을 MutableMapping으로 감싸 `LLMClient.from_env(cache=...)`에 전달. 접근마다 짧은 세션(LLM 룰 병렬 스레드 안전) |
+> | `pages.image_path` | 파이프라인이 정규화 직후 페이지별 200dpi PNG를 `storage/pages/{document_id}/{page_no}.png`로 1회 렌더링·저장. `GET .../pages/{n}/image`는 파일이 있으면 그대로, 없으면 즉석 렌더링 |
+>
 > 환경변수: `LLM_BASE_URL`(비우면 규칙 기반 오프라인 모드) · `LLM_MODEL` · `LLM_API_KEY` · `OCR_ENGINE`(auto|paddle_vl|paddle|tesseract) · `OCR_BASE_URL` · `OCR_DPI`.
 > 장애: `OcrUnavailableError`/`LLMUnavailableError`(API 503 OCR_UNAVAILABLE/LLM_UNAVAILABLE) → 문서 FAILED + jobs.error, reprocess로 재시작.
 
