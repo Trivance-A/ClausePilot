@@ -1,0 +1,75 @@
+{
+  "doc_id": "ftc_service_general",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_service_general.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "통합민원시스템 유지관리 용역",
+      "page": 1,
+      "bbox": [
+        0.23529,
+        0.36342,
+        0.48739,
+        0.37767
+      ],
+      "raw_text": "통합민원시스템 유지관리 용역"
+    },
+    "contract_amount": {
+      "value": 841250000,
+      "page": 1,
+      "bbox": [
+        0.26891,
+        0.42043,
+        0.7563,
+        0.43468
+      ],
+      "raw_text": "일금 팔억사천백이십오만원정 (￦841,250,000)"
+    },
+    "guarantee_amount": null,
+    "contract_date": {
+      "value": "2026-03-09",
+      "page": 3,
+      "bbox": [
+        0.08403,
+        0.05938,
+        0.26891,
+        0.07363
+      ],
+      "raw_text": "2026년 3월 9일"
+    },
+    "performance_due_date": {
+      "value": "2026-11-08",
+      "page": 1,
+      "bbox": [
+        0.57143,
+        0.38242,
+        0.77311,
+        0.39667
+      ],
+      "raw_text": "2026년 11월 8일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "(주)누리정보시스템",
+      "page": 3,
+      "bbox": [
+        0.26891,
+        0.09739,
+        0.43697,
+        0.11164
+      ],
+      "raw_text": "(주)누리정보시스템"
+    },
+    "creditor_biz_no": {
+      "value": "771-56-89521",
+      "page": 3,
+      "bbox": [
+        0.26891,
+        0.11639,
+        0.47059,
+        0.13064
+      ],
+      "raw_text": "771-56-89521"
+    }
+  }
+}

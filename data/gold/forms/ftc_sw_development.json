@@ -1,0 +1,85 @@
+{
+  "doc_id": "ftc_sw_development",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_sw_development.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "청사 시설 경비 용역",
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.32542,
+        0.48739,
+        0.33967
+      ],
+      "raw_text": "청사 시설 경비 용역"
+    },
+    "contract_amount": {
+      "value": 621000000,
+      "page": 1,
+      "bbox": [
+        0.26891,
+        0.42043,
+        0.70588,
+        0.43468
+      ],
+      "raw_text": "일금 육억이천백만원정 (￦621,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 93150000,
+      "page": 1,
+      "bbox": [
+        0.40336,
+        0.80048,
+        0.58824,
+        0.81473
+      ],
+      "raw_text": "93,150,000원"
+    },
+    "contract_date": {
+      "value": "2026-07-22",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.55344,
+        0.28571,
+        0.5677
+      ],
+      "raw_text": "2026년 7월 22일"
+    },
+    "performance_due_date": {
+      "value": "2027-01-21",
+      "page": 1,
+      "bbox": [
+        0.58824,
+        0.40143,
+        0.78992,
+        0.41568
+      ],
+      "raw_text": "2027년 1월 21일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "(주)누리정보시스템",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.59145,
+        0.43697,
+        0.6057
+      ],
+      "raw_text": "(주)누리정보시스템"
+    },
+    "creditor_biz_no": {
+      "value": "856-42-46336",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.61045,
+        0.47059,
+        0.6247
+      ],
+      "raw_text": "856-42-46336"
+    }
+  }
+}

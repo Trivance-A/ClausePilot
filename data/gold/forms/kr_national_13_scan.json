@@ -1,0 +1,25 @@
+{
+  "doc_id": "kr_national_13_scan",
+  "source_type": "scan",
+  "source": "data/samples/law/kr_national_13.pdf",
+  "labels": {
+    "contract_name": null,
+    "contract_amount": null,
+    "guarantee_amount": {
+      "value": 88237500,
+      "page": 1,
+      "bbox": [
+        0.73479,
+        0.39025,
+        0.82948,
+        0.40666
+      ],
+      "raw_text": "88,237,500원"
+    },
+    "contract_date": null,
+    "performance_due_date": null,
+    "guarantee_period": null,
+    "creditor_name": null,
+    "creditor_biz_no": null
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "doc_id": "ftc_ict_work",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_ict_work.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "한빛시 중앙로 도로 확장 공사",
+      "page": 1,
+      "bbox": [
+        0.28571,
+        0.34442,
+        0.55462,
+        0.35867
+      ],
+      "raw_text": "한빛시 중앙로 도로 확장 공사"
+    },
+    "contract_amount": {
+      "value": 332000000,
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.43943,
+        0.7563,
+        0.45368
+      ],
+      "raw_text": "일금 삼억삼천이백만원정 (￦332,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 49800000,
+      "page": 2,
+      "bbox": [
+        0.35294,
+        0.24941,
+        0.78992,
+        0.26366
+      ],
+      "raw_text": "일금 사천구백팔십만원정 (￦49,800,000)"
+    },
+    "contract_date": {
+      "value": "2026-04-16",
+      "page": 3,
+      "bbox": [
+        0.08403,
+        0.13539,
+        0.28571,
+        0.14964
+      ],
+      "raw_text": "2026년 4월 16일"
+    },
+    "performance_due_date": {
+      "value": "2026-09-22",
+      "page": 1,
+      "bbox": [
+        0.40336,
+        0.42043,
+        0.60504,
+        0.43468
+      ],
+      "raw_text": "2026년 9월 22일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "가온산업(주)",
+      "page": 3,
+      "bbox": [
+        0.26891,
+        0.1734,
+        0.38655,
+        0.18765
+      ],
+      "raw_text": "가온산업(주)"
+    },
+    "creditor_biz_no": {
+      "value": "544-25-53918",
+      "page": 3,
+      "bbox": [
+        0.21849,
+        0.1924,
+        0.42017,
+        0.20665
+      ],
+      "raw_text": "544-25-53918"
+    }
+  }
+}

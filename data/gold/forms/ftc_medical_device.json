@@ -1,0 +1,75 @@
+{
+  "doc_id": "ftc_medical_device",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_medical_device.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "도서관 서가 및 열람대 구매",
+      "page": 1,
+      "bbox": [
+        0.52101,
+        0.30641,
+        0.77311,
+        0.32067
+      ],
+      "raw_text": "도서관 서가 및 열람대 구매"
+    },
+    "contract_amount": {
+      "value": 373250000,
+      "page": 1,
+      "bbox": [
+        0.23529,
+        0.34442,
+        0.7395,
+        0.35867
+      ],
+      "raw_text": "일금 삼억칠천삼백이십오만원정 (￦373,250,000)"
+    },
+    "guarantee_amount": null,
+    "contract_date": {
+      "value": "2026-06-13",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.36342,
+        0.28571,
+        0.37767
+      ],
+      "raw_text": "2026년 6월 13일"
+    },
+    "performance_due_date": {
+      "value": "2026-11-29",
+      "page": 1,
+      "bbox": [
+        0.58824,
+        0.32542,
+        0.80672,
+        0.33967
+      ],
+      "raw_text": "2026년 11월 29일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "주식회사 바른물류",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.40143,
+        0.42017,
+        0.41568
+      ],
+      "raw_text": "주식회사 바른물류"
+    },
+    "creditor_biz_no": {
+      "value": "344-49-32997",
+      "page": 2,
+      "bbox": [
+        0.2521,
+        0.42043,
+        0.45378,
+        0.43468
+      ],
+      "raw_text": "344-49-32997"
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "doc_id": "kr_local_12",
+  "source_type": "native",
+  "source": "data/samples/law/kr_local_12.pdf",
+  "labels": {
+    "contract_name": {
+      "value": "가람초등학교 강당 증축 공사",
+      "page": 1,
+      "bbox": [
+        0.25204,
+        0.23741,
+        0.45614,
+        0.25217
+      ],
+      "raw_text": "가람초등학교 강당 증축 공사"
+    },
+    "contract_amount": {
+      "value": 759000000,
+      "page": 1,
+      "bbox": [
+        0.25204,
+        0.30625,
+        0.52843,
+        0.32101
+      ],
+      "raw_text": "금 칠억오천구백만원정(￦759,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 22770000,
+      "page": 1,
+      "bbox": [
+        0.45877,
+        0.40951,
+        0.58907,
+        0.42428
+      ],
+      "raw_text": "금 22,770,000원정"
+    },
+    "contract_date": null,
+    "performance_due_date": {
+      "value": "2026-12-03",
+      "page": 1,
+      "bbox": [
+        0.69146,
+        0.27183,
+        0.77415,
+        0.28659
+      ],
+      "raw_text": "2026. 12. 3."
+    },
+    "guarantee_period": {
+      "value": {
+        "start": "2026-12-04",
+        "end": "2028-12-02"
+      },
+      "page": 1,
+      "bbox": [
+        0.69146,
+        0.40951,
+        0.86563,
+        0.42428
+      ],
+      "raw_text": "2026. 12. 4.~2028. 12. 2."
+    },
+    "creditor_name": {
+      "value": "다온시 교육지원청 교육장",
+      "page": 1,
+      "bbox": [
+        0.15216,
+        0.73064,
+        0.33612,
+        0.7454
+      ],
+      "raw_text": "다온시 교육지원청 교육장"
+    },
+    "creditor_biz_no": null
+  }
+}
