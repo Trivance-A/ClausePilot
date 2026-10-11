@@ -2,12 +2,19 @@
 duplicate merge and evidence line IDs -> bbox (05_OCR_Pipeline §3-⑨).
 
 Rules (engine=rule) use default_severity; LLM findings use severity = f(score): >=0.75 HIGH, >=0.45 MEDIUM, else LOW.
-LLM findings without a valid evidence line are dropped (근거 우선 — no evidence, no finding).
+Hallucination guards for LLM findings (근거 우선 — no evidence, no finding):
+  1. evidence_quotes must be found verbatim (normalized exact or fuzzy >= 85) in the contract, else the finding is
+     dropped; CONTRADICTION_LLM needs quotes from two separate places (not one sentence wrapped over adjacent lines
+     of the same article), POLICY_VIOLATION a valid regulation reference.
+     Highlights come from the verified quotes, not from the line IDs the model claims.
+  2. Every number in title/description must exist in the contract (or cited regulation), allowing 1000분의 3 = 0.3%
+     and 1,000만원 = 10,000,000. Otherwise the model's text is replaced by a template + the verified quote.
 POLICY_VIOLATION gets top-3 regulation chunks from the RAG search through `policy_search` (the pipelines' contact point).
 """
 
 import logging
 import re
+import unicodedata
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -23,7 +30,7 @@ from ai.extract.normalize import (
     parse_amounts,
 )
 from ai.llm import LLMClient
-from ai.mapping import clean_line_ids, line_highlights
+from ai.mapping import LINE_ID_RE, clean_line_ids, map_value
 from ai.types import FIELD_LABELS, HighlightDict, OcrLineDict, RiskFindingDict
 
 logger = logging.getLogger(__name__)
@@ -198,7 +205,13 @@ _IDS = {"type": "array", "items": {"type": "string", "pattern": "^L[0-9]+-[0-9]+
 
 
 def _schema(with_refs: bool) -> dict:
-    props = {"title": {"type": "string"}, "description": {"type": "string"}, "evidence_line_ids": _IDS, "score": {"type": "number"}}
+    props = {
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "evidence_line_ids": _IDS,
+        "evidence_quotes": {"type": "array", "items": {"type": "string"}},
+        "score": {"type": "number"},
+    }
     if with_refs:
         props["regulation_refs"] = {"type": "array", "items": {"type": "integer"}}
     item = {"type": "object", "properties": props, "required": list(props)}
@@ -208,8 +221,9 @@ def _schema(with_refs: bool) -> dict:
 _COMMON = (
     "너는 한국어 계약서 위험조항 검토 도구다. 반드시 JSON만 출력한다.\n"
     "findings 각 항목: title(짧은 제목), description(왜 위험한지 1~2문장), evidence_line_ids(근거 라인 ID, 예: L1-17), "
-    "score(0~1 위험도: 0.75 이상 심각, 0.45 이상 주의).\n"
-    "문서에 실제로 적힌 조항만 근거로 삼는다. 근거 라인이 없으면 보고하지 않는다. 해당 사항이 없으면 findings는 []."
+    "evidence_quotes(근거 라인에서 원문 그대로 복사한 구절 — 요약·변형·번역 금지), score(0~1 위험도: 0.75 이상 심각, 0.45 이상 주의).\n"
+    "문서에 실제로 적힌 조항만 근거로 삼는다. 문서에 없는 금액·날짜·비율을 만들어 쓰지 않는다. "
+    "근거 구절을 그대로 인용할 수 없으면 보고하지 않는다. 해당 사항이 없으면 findings는 []."
 )
 
 TASKS = {
@@ -245,32 +259,86 @@ def llm_rule(rule: dict, lines: list[OcrLineDict], llm: LLMClient, policy_search
 
     output = llm.chat_json(f"{_COMMON}\n과제: {task}", prompt, _schema(bool(regs)), prompt_version=PROMPT_VERSION, name="risk_findings")
     by_id = {ln["line_id"]: ln for ln in lines}
+    known = source_numbers([ln["text"] for ln in lines] + [r["content"] for r in regs])
     out = []
     for item in output.get("findings") or []:
-        ids = clean_line_ids(item.get("evidence_line_ids"), by_id)
-        if not ids:
+        highlights = verify_quotes(item.get("evidence_quotes"), lines, clean_line_ids(item.get("evidence_line_ids"), by_id))
+        ids = list(dict.fromkeys(h["ocr_line_id"] for h in highlights if h["ocr_line_id"]))
+        refs = [n for n in item.get("regulation_refs") or [] if isinstance(n, int) and 1 <= n <= len(regs)]
+        if not ids or (rule["code"] == "CONTRADICTION_LLM" and not two_places(ids, lines)) or (regs and not refs):
+            logger.info("dropped unverified %s finding: %r", rule["code"], item.get("title"))
             continue
         reasoning: dict[str, Any] = {"engine": "llm", "model": llm.model, "prompt_version": PROMPT_VERSION, "evidence_line_ids": ids}
         if regs:
-            reasoning["regulation_refs"] = [
-                {k: regs[n - 1].get(k) for k in ("chunk_id", "regulation_id", "regulation_title", "path", "node_id")}
-                for n in item.get("regulation_refs") or []
-                if isinstance(n, int) and 1 <= n <= len(regs)
-            ]
+            reasoning["regulation_refs"] = [{k: regs[n - 1].get(k) for k in ("chunk_id", "regulation_id", "regulation_title", "path", "node_id")} for n in refs]
         evidence = "\n".join(by_id[i]["text"] for i in ids)
         title = str(item.get("title") or rule["name"]).strip()
-        out.append(
-            _finding(
-                rule,
-                title,
-                str(item.get("description") or "").strip(),
-                line_highlights(ids, by_id),
-                evidence,
-                score=item.get("score", 0.5),
-                reasoning=reasoning,
-            )
-        )
+        description = str(item.get("description") or "").strip()
+        if bad := ungrounded_numbers(title + " " + description, known):
+            reasoning["ungrounded_numbers"] = bad  # model text kept only for audit
+            reasoning["original_description"] = description
+            title, description = rule["name"], f'{rule["name"]} 의심 조항입니다. 근거 원문을 확인하세요: "{by_id[ids[0]]["text"]}"'
+        out.append(_finding(rule, title, description, highlights, evidence, score=item.get("score", 0.5), reasoning=reasoning))
     return out
+
+
+_ARTICLE_START_RE = re.compile(r"^\s*제\s*(\d+(?:의\d+)?)\s*조")
+
+
+def two_places(ids: list[str], lines: list[OcrLineDict]) -> bool:
+    """A contradiction needs two different articles, or two non-adjacent spots inside one article."""
+    article, where, index = "preamble", {}, {}
+    for i, ln in enumerate(lines):
+        if m := _ARTICLE_START_RE.match(ln["text"]):
+            article = m.group(1)
+        where[ln["line_id"]], index[ln["line_id"]] = article, i
+    pos = sorted(index[i] for i in ids)
+    return len({where[i] for i in ids}) >= 2 or (len(pos) >= 2 and pos[-1] - pos[0] >= len(pos))
+
+
+def verify_quotes(quotes: list[str] | None, lines: list[OcrLineDict], cited_ids: list[str]) -> list[HighlightDict]:
+    """Highlights of the quotes that really occur in the contract (cited lines first, then anywhere)."""
+    out: list[HighlightDict] = []
+    for quote in quotes or []:
+        method, hl, _ = map_value(str(quote), lines, cited_ids)
+        if method != "none":
+            out.extend(h for h in hl if h not in out)
+    return out
+
+
+_NUM_RE = re.compile(r"\d+(?:\.\d+)*")
+
+
+def _plain(text: str) -> str:
+    return LINE_ID_RE.sub(" ", re.sub(r"(?<=\d),(?=\d{3})", "", unicodedata.normalize("NFKC", text)))
+
+
+def source_numbers(texts: list[str]) -> set[float]:
+    """Every number the sources state, plus the same amounts/rates written another way."""
+    known: set[float] = set()
+    for text in texts:
+        for tok in _NUM_RE.findall(_plain(text)):
+            known.update(float(p) for p in tok.split("."))
+            if tok.count(".") == 1:
+                known.add(float(tok))
+        known.update(v for v in parse_amounts(text) if v is not None)
+        for rate in penalty_rates(text):
+            known.update({round(rate, 6), round(rate * 100, 6), round(rate * 1000, 6)})
+    return known
+
+
+_UNIT_AMOUNT_RE = re.compile(r"\d+\s*[십백천만억조]+(?:\s*\d+\s*[십백천만억조]+)*")  # 3억5천만, 1000만
+_ARTICLE_REF_RE = re.compile(r"제\s*(\d+)\s*[조항호목장절]")  # "제8조" is an article number, not 8 trillion
+
+
+def ungrounded_numbers(claim: str, known: set[float]) -> list[str]:
+    """Numbers in an LLM sentence that appear nowhere in the sources ("자본금 1,000만원" for a blank 금 ___ 만원)."""
+    text = _ARTICLE_REF_RE.sub(r" \1 ", _plain(claim))
+    bad = [m.group() for m in _UNIT_AMOUNT_RE.finditer(text) if korean_to_int(m.group()) not in known]
+    for tok in _NUM_RE.findall(_UNIT_AMOUNT_RE.sub(" ", text)):
+        if not ((tok.count(".") == 1 and round(float(tok), 6) in known) or all(float(p) in known for p in tok.split("."))):
+            bad.append(tok)
+    return bad
 
 
 # ---------------- orchestration ----------------

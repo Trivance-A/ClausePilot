@@ -6,6 +6,8 @@ evidence_line_ids, confidence; absent -> raw_value null (no guessing); normaliza
 Schema notes from Ollama qwen2.5:7b runs (SPEC): `anyOf[null, object]` makes every field null, so each field is
 always an object with `raw_value: string|null`; line IDs come back as "[L1-2]" -> pattern + post-cleaning;
 the model's confidence is ~always 1, so the stored confidence is derived from mapping/validation instead.
+A value that cannot be found anywhere in the document (best fuzzy < 50, re-query failed) is nulled: 추측 금지.
+Values that merely look OCR-garbled (50~85) stay with mapping_method=none for manual fixing (05_OCR_Pipeline ⑦).
 """
 
 import logging
@@ -67,6 +69,7 @@ REQUERY_SCHEMA = {
 }
 
 _BLANKS = {"", "null", "none", "n/a", "없음", "해당없음", "미기재", "-"}
+NOT_IN_DOCUMENT = 50  # below this best fuzzy score the value is a fabrication, not an OCR misread
 _METHOD_CONFIDENCE = {"llm_ref": 0.95, "exact": 0.9, "fuzzy": 0.75, "none": 0.3}
 
 
@@ -117,6 +120,10 @@ def extract_fields(lines: list[OcrLineDict], llm: LLMClient) -> tuple[list[Extra
             return out.get("evidence_line_ids") or []
 
         method, highlights, score = map_value(value, lines, (output.get(code) or {}).get("evidence_line_ids"), requery if value else None, code)
+        if value and method == "none" and score < NOT_IN_DOCUMENT:
+            # nothing in the document even resembles it -> the model invented it (raw kept in raw_llm_output)
+            logger.warning("dropped %s=%r: not found in document (best fuzzy %.0f)", code, value, score)
+            value, normalized[code] = None, None
         fields.append(
             {
                 "field_code": code,

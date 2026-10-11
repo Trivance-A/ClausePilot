@@ -91,12 +91,24 @@ def test_extract_fields_end_to_end(lines):
     assert "L1-1: 공 사 도 급 계 약 서" in llm.calls[0][2]
 
 
-def test_value_not_in_document_is_requeried_then_none(lines):
+def test_value_not_in_document_is_dropped_as_fabricated(lines):
     llm = FakeLLM(extract={"contract_name": f("존재하지 않는 공사명 ABC")}, requery={"evidence_line_ids": ["L1-2"]})
-    fields, _ = extract_fields(lines, llm)
-    name = fields[0]
-    assert name["mapping_method"] == "none" and name["highlights"] == [] and name["raw_value"] == "존재하지 않는 공사명 ABC"
+    fields, meta = extract_fields(lines, llm)
+    assert fields[0] == {
+        "field_code": "contract_name",
+        "raw_value": None,
+        "normalized_value": None,
+        "confidence": 0.0,
+        "mapping_method": "none",
+        "highlights": [],
+    }
+    assert meta["raw_llm_output"]["contract_name"]["raw_value"] == "존재하지 않는 공사명 ABC"  # kept for audit only
     assert any(v.startswith("requery") for v, _, _ in llm.calls)
+
+
+def test_ocr_garbled_lookalike_is_kept_for_manual_fix(lines):
+    fields, _ = extract_fields(lines, FakeLLM(extract={"contract_name": f("한빛시 도로 확장공샤 2단계")}))
+    assert fields[0]["raw_value"] == "한빛시 도로 확장공샤 2단계" and fields[0]["mapping_method"] == "none"
 
 
 def test_long_documents_are_windowed():
@@ -176,17 +188,98 @@ def test_cap_clause_is_not_a_daily_rate():
     assert not [r for r in detect_risks(lines, [], llm=None) if r["rule_code"] == "PENALTY_RATE_HIGH"]
 
 
-def test_llm_engine_keeps_only_evidenced_findings(lines):
+def test_llm_findings_must_quote_the_contract(lines):
     toxic = {
         "findings": [
-            {"title": "일방적 계약해지", "description": "갑만 해지 가능", "evidence_line_ids": ["[L1-14]"], "score": 0.9},
-            {"title": "근거 없음", "description": "환각", "evidence_line_ids": ["L9-9"], "score": 0.9},
+            {
+                "title": "일방적 계약해지",
+                "description": "갑만 사전 통보 없이 해지 가능",
+                "evidence_line_ids": ["[L1-14]"],
+                "evidence_quotes": ["사전 통보 없이 언제든지 계약을 해지할 수 있으며"],
+                "score": 0.9,
+            },
+            {
+                "title": "인용 불일치",
+                "description": "환각",
+                "evidence_line_ids": ["L1-14"],
+                "evidence_quotes": ["을은 언제든지 위약금 없이 해지할 수 있다"],
+                "score": 0.9,
+            },
+            {"title": "인용 없음", "description": "환각", "evidence_line_ids": ["L1-14"], "evidence_quotes": [], "score": 0.9},
+            {"title": "없는 라인", "description": "환각", "evidence_line_ids": ["L9-9"], "evidence_quotes": ["존재하지 않는 조항"], "score": 0.9},
         ]
     }
-    policy = {
-        "findings": [{"title": "보증금률 미달", "description": "규정은 10% 이상", "evidence_line_ids": ["L1-6"], "score": 0.5, "regulation_refs": [1, 7]}]
+    found = {r["title"]: r for r in detect_risks(lines, [], llm=FakeLLM(risk={"독소조항": toxic})) if r["category"] == "toxic"}
+    assert set(found) == {"일방적 계약해지"}
+    hit = found["일방적 계약해지"]
+    assert hit["severity"] == "HIGH" and hit["highlights"][0]["ocr_line_id"] == "L1-14"
+    assert hit["highlights"][0]["bbox"][0] > lines[13]["bbox"][0]  # bbox of the quoted words, not the whole line
+
+
+def test_contradictions_need_two_lines_and_real_numbers(lines):
+    contra = {
+        "findings": [
+            {
+                "title": "계약기간과 준공기한 불일치",
+                "description": "제3조는 2026년 11월 30일, 준공기한은 2026. 12. 31.",
+                "evidence_line_ids": ["L1-10", "L1-5"],
+                "evidence_quotes": ["2026년 11월 30일까지로 한다", "준공기한 : 2026. 12. 31."],
+                "score": 0.8,
+            },
+            {
+                "title": "지체상금 과다",
+                "description": "제8조: 1일 0.3%, 3억5천만원 기준이며 제9조 하자 2년",
+                "evidence_line_ids": ["L1-12", "L1-13"],
+                "evidence_quotes": ["1000분의 3", "준공 후 2년간 하자보수 책임"],
+                "score": 0.6,
+            },
+            {
+                "title": "자본금 모순",
+                "description": "자본금이 1,000만원 증가한다고 되어 있으나 40% 차이",
+                "evidence_line_ids": ["L1-3", "L1-6"],
+                "evidence_quotes": ["일금 삼억오천만원정", "금 삼천오백만원정"],
+                "score": 0.8,
+            },
+            {"title": "한 줄 모순", "description": "x", "evidence_line_ids": ["L1-14"], "evidence_quotes": ["사전 통보 없이"], "score": 0.8},
+            {
+                "title": "한 문장 두 줄",
+                "description": "x",
+                "evidence_line_ids": ["L1-14", "L1-15"],
+                "evidence_quotes": ["사전 통보 없이 언제든지", "어떠한 이의나 손해배상도"],
+                "score": 0.9,
+            },
+        ]
     }
-    llm = FakeLLM(risk={"독소조항": toxic, "내부 규정": policy})
+    found = {r["title"]: r for r in detect_risks(lines, [], llm=FakeLLM(risk={"모순": contra})) if r["rule_code"] == "CONTRADICTION_LLM"}
+    assert set(found) == {"계약기간과 준공기한 불일치", "지체상금 과다", "조항 간 모순"}
+    assert {h["ocr_line_id"] for h in found["계약기간과 준공기한 불일치"]["highlights"]} == {"L1-5", "L1-10"}
+    fabricated = found["조항 간 모순"]  # title/description replaced: the model invented 1,000만원 and 40%
+    assert fabricated["llm_reasoning"]["ungrounded_numbers"] == ["1000만", "40"]
+    assert "1,000만원" not in fabricated["description"] and "1,000만원" in fabricated["llm_reasoning"]["original_description"]
+    assert fabricated["evidence_text"].startswith("2. 계약금액")
+
+
+def test_policy_violation_needs_a_regulation_reference(lines):
+    policy = {
+        "findings": [
+            {
+                "title": "보증금률 확인",
+                "description": "규정은 100분의 10 이상, 계약보증금은 35,000,000원",
+                "evidence_line_ids": ["L1-6"],
+                "evidence_quotes": ["계약보증금 : 금 삼천오백만원정"],
+                "score": 0.5,
+                "regulation_refs": [1, 7],
+            },
+            {
+                "title": "참조 없음",
+                "description": "x",
+                "evidence_line_ids": ["L1-9"],
+                "evidence_quotes": ["미래건설 주식회사"],
+                "score": 0.5,
+                "regulation_refs": [9],
+            },
+        ]
+    }
     regs = [
         {
             "chunk_id": "c1",
@@ -198,13 +291,14 @@ def test_llm_engine_keeps_only_evidenced_findings(lines):
         }
     ]
     queries = []
-    found = detect_risks(lines, [], llm=llm, policy_search=lambda q: queries.append(q) or regs)
-    titles = {r["title"]: r for r in found}
-    assert "근거 없음" not in titles
-    assert titles["일방적 계약해지"]["severity"] == "HIGH" and titles["일방적 계약해지"]["highlights"][0]["ocr_line_id"] == "L1-14"
-    pv = titles["보증금률 미달"]
-    assert pv["category"] == "policy" and pv["severity"] == "MEDIUM"
-    assert pv["llm_reasoning"]["regulation_refs"] == [
+    found = {
+        r["title"]: r
+        for r in detect_risks(lines, [], llm=FakeLLM(risk={"내부 규정": policy}), policy_search=lambda q: queries.append(q) or regs)
+        if r["category"] == "policy"
+    }
+    assert set(found) == {"보증금률 확인"}
+    assert found["보증금률 확인"]["severity"] == "MEDIUM" and "ungrounded_numbers" not in found["보증금률 확인"]["llm_reasoning"]
+    assert found["보증금률 확인"]["llm_reasoning"]["regulation_refs"] == [
         {"chunk_id": "c1", "regulation_id": "r1", "regulation_title": "계약사무규정", "path": "제3장>제12조(계약보증금)", "node_id": "n1"}
     ]
     assert "계약기간" in queries[0] and "지체상금" in queries[0]
