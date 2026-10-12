@@ -51,7 +51,11 @@ _FIELD_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "raw_value": {"type": ["string", "null"]},
-        "evidence_line_ids": {"type": "array", "items": {"type": "string", "pattern": "^L[0-9]+-[0-9]+$"}},
+        "evidence_line_ids": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^L[0-9]+-[0-9]+$"},
+            "maxItems": 5,
+        },  # unbounded -> 7B loops to the token limit
         "confidence": {"type": "number"},
     },
     "required": ["raw_value", "evidence_line_ids", "confidence"],

@@ -201,7 +201,7 @@ RULE_ENGINE = {
 
 # ---------------- LLM engine ----------------
 
-_IDS = {"type": "array", "items": {"type": "string", "pattern": "^L[0-9]+-[0-9]+$"}}
+_IDS = {"type": "array", "items": {"type": "string", "pattern": "^L[0-9]+-[0-9]+$"}, "maxItems": 6}
 
 
 def _schema(with_refs: bool) -> dict:
@@ -209,13 +209,13 @@ def _schema(with_refs: bool) -> dict:
         "title": {"type": "string"},
         "description": {"type": "string"},
         "evidence_line_ids": _IDS,
-        "evidence_quotes": {"type": "array", "items": {"type": "string"}},
+        "evidence_quotes": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
         "score": {"type": "number"},
     }
     if with_refs:
         props["regulation_refs"] = {"type": "array", "items": {"type": "integer"}}
     item = {"type": "object", "properties": props, "required": list(props)}
-    return {"type": "object", "properties": {"findings": {"type": "array", "items": item}}, "required": ["findings"]}
+    return {"type": "object", "properties": {"findings": {"type": "array", "items": item, "maxItems": 10}}, "required": ["findings"]}
 
 
 _COMMON = (

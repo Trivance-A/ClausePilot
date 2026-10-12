@@ -52,6 +52,7 @@ class LLMClient:
         backoff: float = 1.0,
         cache: MutableMapping[str, Any] | None = None,
         guided_json: bool = False,
+        max_tokens: int = 2048,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -60,6 +61,7 @@ class LLMClient:
         self.retries = retries
         self.backoff = backoff
         self.cache = cache  # backend may pass a DB-backed mapping over the llm_cache table
+        self.max_tokens = max_tokens
         self.guided_json = guided_json  # vLLM: schema via `guided_json` (05_개발환경 §2), others: response_format
 
     @classmethod
@@ -78,6 +80,7 @@ class LLMClient:
         body = {
             "model": self.model,
             "temperature": 0,
+            "max_tokens": self.max_tokens,  # a runaway (looping) generation ends here instead of at the 120s timeout
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         }
         if self.guided_json:
