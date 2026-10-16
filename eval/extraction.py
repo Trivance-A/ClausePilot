@@ -27,7 +27,7 @@ from pathlib import Path
 
 from ai.extract import extract_fields
 from ai.extract.normalize import normalize_amount, normalize_biz_no, normalize_company, normalize_date, normalize_text
-from ai.llm import LLMClient
+from ai.llm import LLMClient, LLMUnavailableError
 from ai.ocr import run_ocr
 from ai.parser import normalize_to_pdf
 from ai.types import FIELD_CODES
@@ -110,7 +110,17 @@ def rule_extractor(lines: list) -> list[dict]:
 
 
 def llm_extractor(llm) -> Extractor:
-    return lambda lines: extract_fields(lines, llm)[0]
+    def run(lines: list) -> list[dict]:
+        try:
+            return extract_fields(lines, llm)[0]
+        except LLMUnavailableError as exc:  # one broken LLM answer scores that doc as all-missed instead of aborting the run
+            print(f"LLM failed, counted as empty extraction: {exc}", file=sys.stderr)
+            return [
+                {"field_code": c, "raw_value": None, "normalized_value": None, "confidence": 0.0, "mapping_method": "none", "highlights": []}
+                for c in FIELD_CODES
+            ]
+
+    return run
 
 
 def document_lines(doc: Path, ocr_engine: str | None) -> list:
