@@ -85,7 +85,17 @@ class PaddleEngine:
             from paddleocr import PaddleOCR
         except ImportError as exc:
             raise OcrUnavailableError("paddleocr is not installed") from exc
-        self._ocr = PaddleOCR(lang=lang, use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)
+        # mobile detector + capped input side: the default server detector on a 300dpi A4 page was SIGKILLed (OOM)
+        # on a 16GB Mac with the LLM loaded; PADDLE_DET_MODEL=PP-OCRv5_server_det on a bigger box
+        self._ocr = PaddleOCR(  # model names given explicitly -> paddleocr ignores `lang`, so pin the korean recognizer
+            text_recognition_model_name=f"{lang}_PP-OCRv5_mobile_rec",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+            text_detection_model_name=os.getenv("PADDLE_DET_MODEL", "PP-OCRv5_mobile_det"),
+            text_det_limit_side_len=int(os.getenv("PADDLE_DET_MAX_SIDE", "2000")),
+            text_det_limit_type="max",
+        )
 
     def run(self, image: np.ndarray) -> list[OcrLine]:
         res = self._ocr.predict(image)[0]
