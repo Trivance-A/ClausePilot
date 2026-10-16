@@ -1,3 +1,11 @@
+x-ai-env: &ai-env  # AI·Document 설정 (ai/). LLM은 OpenAI 호환 엔드포인트 하나로 전환
+  LLM_BASE_URL: ${LLM_BASE_URL:-}  # 예: http://host.docker.internal:11434/v1 (Ollama) / vLLM / 상용 API. 비우면 오프라인 규칙 모드
+  LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_GUIDED_JSON: ${LLM_GUIDED_JSON:-}  # vLLM이면 1 (guided_json으로 JSON Schema 강제)
+  OCR_ENGINE: ${OCR_ENGINE:-auto}
+  OCR_BASE_URL: ${OCR_BASE_URL:-}  # --profile gpu 로 ocr 컨테이너를 띄우면 http://ocr:8001
+
 services:
   db:
     image: pgvector/pgvector:pg16  # postgres:16 + vector 확장(정규 Postgres 이미지, 데이터 디렉터리 호환)
@@ -28,6 +36,7 @@ services:
   api:
     build: .
     environment:
+      <<: *ai-env
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/contract_ai
       REDIS_URL: redis://redis:6379/0
     ports:
@@ -39,12 +48,14 @@ services:
         condition: service_healthy
     volumes:
       - ./app:/app/app
+      - ./ai:/app/ai
       - ./storage:/app/storage  # worker가 별도 컨테이너이므로 업로드 파일을 호스트 경로로 공유해야 함
 
   worker:
     build: .
     command: ["rq", "worker", "--url", "redis://redis:6379/0"]
     environment:
+      <<: *ai-env
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/contract_ai
       REDIS_URL: redis://redis:6379/0
     depends_on:
@@ -54,7 +65,39 @@ services:
         condition: service_healthy
     volumes:
       - ./app:/app/app
+      - ./ai:/app/ai
       - ./storage:/app/storage  # api가 저장한 업로드 파일을 워커도 같은 경로에서 읽어야 함
+
+  llm:  # vLLM (GPU 있을 때: docker compose --profile gpu up) — 05_개발환경 §6. GPU 없으면 미기동, LLM_BASE_URL을 상용 API로 지정
+    profiles: ["gpu"]
+    image: vllm/vllm-openai:v0.6.6
+    command: ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}", "--max-model-len", "16384"]
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+    ports:
+      - "8002:8000"
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  ocr:  # OCR 서빙 (GPU 있을 때: docker compose --profile gpu up). 없으면 worker 안에서 Tesseract 실행
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+    environment:
+      OCR_ENGINE: ${OCR_SERVER_ENGINE:-paddle}  # GPU + PaddleOCR-VL 이면 paddle_vl
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ai:/app/ai
 
 volumes:
   db_data:
+  hf_cache:

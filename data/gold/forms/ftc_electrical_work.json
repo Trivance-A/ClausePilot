@@ -1,0 +1,85 @@
+{
+  "doc_id": "ftc_electrical_work",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_electrical_work.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "한빛시 중앙로 도로 확장 공사",
+      "page": 1,
+      "bbox": [
+        0.28571,
+        0.36342,
+        0.55462,
+        0.37767
+      ],
+      "raw_text": "한빛시 중앙로 도로 확장 공사"
+    },
+    "contract_amount": {
+      "value": 193000000,
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.43943,
+        0.7563,
+        0.45368
+      ],
+      "raw_text": "일금 일억구천삼백만원정 (￦193,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 19300000,
+      "page": 2,
+      "bbox": [
+        0.35294,
+        0.32542,
+        0.77311,
+        0.33967
+      ],
+      "raw_text": "일금 천구백삼십만원정 (￦19,300,000)"
+    },
+    "contract_date": {
+      "value": "2026-02-26",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.85748,
+        0.28571,
+        0.87173
+      ],
+      "raw_text": "2026년 2월 26일"
+    },
+    "performance_due_date": {
+      "value": "2026-08-10",
+      "page": 1,
+      "bbox": [
+        0.40336,
+        0.42043,
+        0.60504,
+        0.43468
+      ],
+      "raw_text": "2026년 8월 10일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "(주)미래기계",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.89549,
+        0.38655,
+        0.90974
+      ],
+      "raw_text": "(주)미래기계"
+    },
+    "creditor_biz_no": {
+      "value": "155-17-97986",
+      "page": 2,
+      "bbox": [
+        0.21849,
+        0.91449,
+        0.42017,
+        0.92874
+      ],
+      "raw_text": "155-17-97986"
+    }
+  }
+}

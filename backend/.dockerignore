@@ -5,3 +5,4 @@ tests
 docs
 .env
 .venv
+ai/tests

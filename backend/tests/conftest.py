@@ -12,7 +12,7 @@ os.environ["QUEUE_ASYNC"] = "false"  # 워커 프로세스 없이 enqueue() 호�
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from app.core.config import settings
 from app.db.session import Base
@@ -22,6 +22,8 @@ from app.main import app
 @pytest.fixture(scope="session", autouse=True)
 def _reset_database():
     engine = create_engine(settings.database_url)
+    with engine.begin() as conn:  # a fresh pgvector container has no extension yet (app lifespan runs only after this)
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     engine.dispose()

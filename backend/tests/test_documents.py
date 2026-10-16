@@ -88,7 +88,7 @@ def test_upload_xlsx_extracts_fields(client, admin_headers):
 
 
 def test_upload_real_hwp_extracts_text(client, admin_headers):
-    """프로젝트 루트의 실제 RFP .hwp 파일로 hwp5txt 연동을 검증한다."""
+    """프로젝트 루트의 실제 RFP .hwp 파일로 HWP 파서(ai/parser/hwp.py) 연동을 검증한다."""
     from pathlib import Path
 
     hwp_path = Path(__file__).resolve().parents[2] / "제안요청서_AI보증신청 및 챗봇 시스템 개발.hwp"

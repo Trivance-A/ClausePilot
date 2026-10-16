@@ -17,22 +17,22 @@ SSE 챗봇 응답까지 — 아래 "구현 현황과 한계" 참고).
 
 ## 구현 현황과 한계
 
-외부 OCR/LLM API 키 없이도 전체 파이프라인이 end-to-end로 동작하도록, AI 모듈
-(`app/services/ai_client.py`)은 **결정적(deterministic) 규칙 기반 로직**으로 구현했습니다.
-실제 서비스로 확장할 때는 아래 표의 "현재 구현"을 실제 AI 모델로 교체하면 됩니다
-(인터페이스는 그대로 유지).
+계약서 파이프라인 AI 모듈은 `ai/` 패키지(AI·Document 파트)에 있고 `app/services/ai_client.py`가 위임합니다.
+LLM은 OpenAI 호환 엔드포인트 하나(`LLM_BASE_URL`, 예: Ollama `http://localhost:11434/v1`)로 전환하며,
+비워두면 외부 API 없이 규칙 기반으로 end-to-end 동작합니다(CI·통합 테스트 기본값). AI 모듈 단위 테스트는
+DB 없이 `pytest ai/tests` (실 LLM 확인: `LLM_LIVE_TEST=1 LLM_BASE_URL=... pytest ai/tests`).
 
 | 기능 | 현재 구현 | 한계 |
 |---|---|---|
-| 문서 정규화/OCR | PyMuPDF로 PDF 텍스트 레이어 직접 추출. hwp(pyhwp)/hwpx(zip+XML)/docx/xlsx도 텍스트를 추출해 PDF로 재구성 | 텍스트 레이어 없는 스캔본은 실제 OCR 엔진 미연동(빈 결과). hwp/hwpx/docx/xlsx는 원본 레이아웃 대신 텍스트를 순서대로 재배치(표는 한 줄로 단순화) |
-| 계약서 정보추출 | 키워드 매칭 + 정규식 (금액/날짜/사업자번호 등) | LLM 기반 추출보다 표현 변형에 취약 |
-| 위험조항 탐지 | `risk_rules` DB 테이블 기반 룰 엔진(관리자가 DB에서 직접 조정 가능), 통일된 score→severity 공식(≥0.75 HIGH/≥0.45 MEDIUM) | 룰에 없는 패턴은 탐지 못함 |
+| 문서 정규화/OCR | `ai/parser`·`ai/ocr`: hwp(olefile 레코드 파서)/hwpx(zip+lxml)/docx/xlsx 자체 파싱 + LibreOffice headless PDF 변환(doc/xls·HWP 3.0 포함, 깨진 변환은 파싱 텍스트와 대조해 거부), 이미지는 img2pdf. 페이지별 native/scan/mixed 라우터 → native는 PyMuPDF 라인+표 셀(r,c), scan은 300dpi 렌더→deskew→표 격자 검출→OCR(PaddleOCR-VL/PP-OCRv5/Tesseract, `OCR_BASE_URL` 서빙 컨테이너) | LibreOffice 없으면 텍스트 재배치 PDF로 폴백(레이아웃 손실). HWP 5.x 레이아웃 보존 변환은 H2Orestart 확장 필요. PaddleOCR-VL은 블록 bbox를 균등 분할한 근사 라인 bbox |
+| 계약서 정보추출 | `ai/extract`: OpenAI 호환 LLM(`LLM_BASE_URL`, JSON Schema 강제)이 8개 항목 + 근거 라인 ID 반환 → `ai/mapping` 4단 역매핑(llm_ref→exact→fuzzy≥85→재질의) → 금액(한글숫자)·날짜·보증기간(상대표현)·사업자번호(체크섬)·상호 정규화. `LLM_BASE_URL` 미설정 시 키워드+정규식 규칙 기반 | — (extractions.prompt_version·raw_llm_output 저장, LLM 응답은 llm_cache 테이블에 캐시) |
+| 위험조항 탐지 | `ai/risk`: 룰 엔진(지체상금율·필수조항 누락·한글/숫자 금액 불일치·일자 모순) + LLM 엔진(독소조항·조항 간 모순·내부규정 위배=RAG 검색 top-3 대조) 병렬 실행. 환각 차단: LLM 결과는 원문 인용(evidence_quotes)이 문서에서 검증될 때만 채택, 설명 속 숫자가 문서·규정에 없으면 설명을 원문 템플릿으로 교체, 모순은 서로 다른 두 위치 인용 필수. 추출값이 문서 어디에도 없으면(유사도<50) null. 룰 정의는 `ai/risk/rules.yaml`(03_데이터정의 §6.1). DB `risk_rules`의 문서형 룰(engine·params·default_severity, `rules.yaml`에서 시드)을 그대로 실행 — 관리자가 끄면 실행 안 됨. LLM 미설정 시 DB `risk_rules`의 keyword 룰이 LLM 룰을 대신함 | 문서형 행과 기존 행(rule_type field_missing/keyword 등)이 한 테이블에 공존(기존 컬럼 유지) |
 | 규정 구조 파싱 | 정규식 기반 장/조/항 파서 | "제N장/제N조/①~⑮" 형식 외 구조는 인식 못함 |
 | 규정 검색 | **로컬 임베딩**(fastembed, `paraphrase-multilingual-MiniLM-L12-v2`, 384d, pgvector+HNSW 인덱스 저장) 코사인 유사도 + **Kiwi 형태소 분석** 기반 BM25 → RRF 결합. 청킹은 조(article) 단위로 하위 항을 합쳐 1청크 | bge-m3(1024d)·bge-reranker 대신 경량 모델로 대체, cross-encoder rerank 미도입(RRF 순위를 그대로 사용) |
 | 챗봇 답변 생성 | 검색된 조항을 그대로 인용하는 추출형 응답 | 자연스러운 문장 생성은 안 됨(LLM 미연동) |
 | 비동기 작업 처리 | Redis + RQ, `worker` 컨테이너가 별도 프로세스로 처리 | 재시도/우선순위 큐 등 고급 기능 미설정(기본 큐 1개) |
 | 성능평가(`/eval`) | 라이브 DB 데이터 기반 프록시 지표 | 정답 라벨셋이 없어 `failures[]`는 항상 빈 배열 |
-| PDF 내보내기 / 페이지 이미지 | PyMuPDF로 하이라이트 사각형 실제 합성 / 페이지 200dpi PNG 렌더링(`GET .../pages/{n}/image`) | — |
+| PDF 내보내기 / 페이지 이미지 | PyMuPDF로 하이라이트 사각형 실제 합성 / 페이지 200dpi PNG를 파이프라인에서 1회 렌더링해 `pages.image_path`에 저장, `GET .../pages/{n}/image`가 그 파일 반환(없으면 즉석 렌더링) | 문서 삭제 시 PNG 파일은 남음(업로드·정규화 파일과 동일) |
 
 데모 계정: `admin@example.com` / `admin1234` (admin), `user@example.com` / `user1234` (user) —
 `SEED_DEMO_USERS=true`(기본값)일 때 앱 시작 시 자동 생성됩니다.
@@ -115,11 +115,13 @@ pytest          # 또는: make test
 
 `tests/conftest.py`가 세션 시작 시 테이블을 drop_all→create_all로 초기화하므로, 매 실행이
 깨끗한 상태에서 시작합니다(해당 DB의 기존 데이터는 사라집니다 — 개발용 DB를 그대로 재사용).
-총 46개 테스트가 실제 동작을 검증합니다:
+총 58개 테스트(57 통과 + 샘플 hwp 없으면 1 skip)가 실제 동작을 검증합니다:
 - `tests/test_*.py` (auth/documents/extractions/highlights/risks/guarantee/regulations/search/chat/admin/eval):
   실제 PDF 업로드 → 백그라운드 파이프라인 완료 대기 → 추출/위험조항/검색/챗봇 응답까지 실제 값 검증
   (예: 계약금액 정규식 추출값이 실제로 350,000,000인지, 위험조항 카테고리가 penalty/toxic으로
   올바르게 분류되는지 등). `tests/pdf_fixtures.py`가 PyMuPDF로 테스트용 계약서/규정 PDF를 생성합니다.
+- `tests/test_ai_integration.py`: 03_데이터정의 컬럼(extractions 메타·pages.image_path·risk_rules 문서형 룰·llm_cache)과
+  FR-09 접점(규정 인덱싱 → 계약서 업로드 → 가짜 LLM으로 위험 재탐지 → POLICY_VIOLATION의 `llm_reasoning.regulation_refs`가 실제 청크를 가리킴)
 - `tests/test_models.py`: SQLAlchemy 모델/관계 설정 정적 검증 (DB 연결 불필요)
 
 `tests/helpers.py`에 업로드+완료대기 헬퍼가 있어 새 테스트에서 재사용할 수 있습니다.

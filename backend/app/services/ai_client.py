@@ -1,98 +1,43 @@
-"""AI·Document 파트 인터페이스의 결정적(deterministic) 초기 구현.
+"""AI·Document 파트 인터페이스 (docs/04_ai_integration.md). Backend는 이 모듈의 함수 시그니처에만 의존한다.
 
-실제 OCR 엔진/LLM API 키가 아직 없는 상태에서도 end-to-end로 동작하는 시스템을 만들기 위해,
-아래 함수들은 규칙 기반(regex/키워드 매칭) 로직으로 구현되어 있다. AI 파트가 나중에 실제
-OCR/LLM/임베딩 모델을 붙일 때는 이 파일의 함수 시그니처만 유지한 채 내부 구현을 교체하면 된다
-(Backend/API 계층은 이 인터페이스에만 의존하고 DB에 직접 접근하지 않는다 — docs/01_architecture.md 3절).
-
-한계(의도적 범위 축소, docs/04_ai_integration.md 참고):
-- normalize_to_pdf: pdf/docx/xlsx/hwpx/hwp 지원. 단 hwp/hwpx/docx/xlsx는 원본 레이아웃을 보존하지
-  않고 텍스트만 A4 페이지에 순서대로 재배치한다(표는 " | "로 이어붙인 한 줄로 단순화)
-- run_ocr: 텍스트 레이어 기반 추출만 지원(스캔 이미지의 실제 OCR 엔진 미연동)
-- hybrid_search: 외부 Vector DB 대신 질의 시점 BM25 + TF-IDF 코사인 유사도로 대체
-- generate_answer_stream: 실제 LLM 대신 검색된 조항을 그대로 인용하는 추출형(extractive) 응답
+계약서 파이프라인(정규화·OCR·LLM 추출·bbox 역매핑·위험탐지)은 `ai/` 패키지(AI·Document 담당)에 구현되어 있고
+여기서는 위임만 한다. LLM은 OpenAI 호환 엔드포인트 하나로 추상화되어 LLM_BASE_URL만으로 vLLM/Ollama/API를 전환한다.
+- LLM_BASE_URL 미설정(오프라인·CI): 항목 추출은 아래 규칙 기반(_extract_rule_based)으로, 위험탐지의 LLM 룰
+  (독소·모순·규정위배)은 DB risk_rules의 keyword 룰로 대체한다. 룰 엔진(지체상금율·필수조항·금액/일자 모순)은 항상 실행.
+- 규정 RAG(구조 파싱·청킹·검색·답변)는 Frontend·RAG 파트 범위로 기존 구현을 유지한다.
 """
 
 import math
 import re
-import shutil
 import uuid
 from collections import Counter
-from collections.abc import AsyncIterator
-from typing import Any, TypedDict
+from collections.abc import AsyncIterator, Callable, MutableMapping
+from typing import Any, NotRequired, TypedDict
 
-import pymupdf as fitz
 from rank_bm25 import BM25Okapi
 
-FIELD_CODES = [
-    "contract_name",
-    "contract_amount",
-    "guarantee_amount",
-    "contract_date",
-    "performance_due_date",
-    "guarantee_period",
-    "creditor_name",
-    "creditor_biz_no",
-]
+from ai import extract as ai_extract
+from ai import ocr as ai_ocr
+from ai import parser as ai_parser
+from ai import risk as ai_risk
+from ai.llm import LLMClient, LLMUnavailableError
+from ai.ocr import OcrUnavailableError
+from ai.types import (
+    FIELD_CODES,
+    FIELD_LABELS,
+    ExtractionFieldDict,
+    HighlightDict,
+    NormalizedDocument,
+    OcrLineDict,
+    PageMetaDict,
+    RiskFindingDict,
+)
+
+__all__ = ["FIELD_CODES", "FIELD_LABELS", "LLMUnavailableError", "OcrUnavailableError", "PageMetaDict"]
 
 RISK_CATEGORIES = ["penalty", "missing", "contradiction", "toxic", "policy"]
 
-
-class UnsupportedFormatError(Exception):
-    """normalize_to_pdf가 아직 지원하지 않는 포맷을 만났을 때 발생. 파이프라인이 documents.status=FAILED로 처리."""
-
-
-# ---- TypedDict 정의 (docs/04_ai_integration.md 1절과 대응) ----
-
-
-class PageMetaDict(TypedDict):
-    page_no: int
-    width_pt: float
-    height_pt: float
-    rotation: int
-    has_text_layer: bool
-
-
-class NormalizedDocument(TypedDict):
-    normalized_pdf_path: str
-    pages: list[PageMetaDict]
-
-
-class OcrLineDict(TypedDict):
-    page_no: int
-    line_id: str
-    text: str
-    bbox: list[float]
-    confidence: float
-    source: str
-    table_cell: str | None
-
-
-class HighlightDict(TypedDict):
-    page_no: int
-    bbox: list[float]
-    ocr_line_id: str | None
-
-
-class ExtractionFieldDict(TypedDict):
-    field_code: str
-    raw_value: str | None
-    normalized_value: dict | None
-    confidence: float
-    mapping_method: str
-    highlights: list[HighlightDict]
-
-
-class RiskFindingDict(TypedDict):
-    category: str
-    severity: str
-    score: float
-    rule_code: str | None
-    title: str
-    description: str
-    evidence_text: str | None
-    highlights: list[HighlightDict]
-    llm_reasoning: dict | None
+UnsupportedFormatError = ai_parser.UnsupportedFormatError
 
 
 class RegulationNodeDict(TypedDict):
@@ -140,159 +85,16 @@ class SearchResultDict(TypedDict):
     rerank_score: float
 
 
-# ==================== 1. 문서 파싱 ====================
-
-
-_SUPPORTED_FORMATS = {"pdf", "docx", "xlsx", "hwpx", "hwp"}
-
-
-def _extract_docx_lines(path: str) -> list[str]:
-    from docx import Document as DocxDocument
-
-    doc = DocxDocument(path)
-    lines = [p.text for p in doc.paragraphs if p.text.strip()]
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [c.text.strip() for c in row.cells if c.text.strip()]
-            if cells:
-                lines.append(" | ".join(cells))
-    return lines
-
-
-def _extract_xlsx_lines(path: str) -> list[str]:
-    from openpyxl import load_workbook
-
-    wb = load_workbook(path, data_only=True)
-    lines: list[str] = []
-    for ws in wb.worksheets:
-        lines.append(f"[{ws.title}]")
-        for row in ws.iter_rows(values_only=True):
-            cells = [str(c) for c in row if c is not None and str(c).strip()]
-            if cells:
-                lines.append(" | ".join(cells))
-    return lines
-
-
-def _extract_hwpx_lines(path: str) -> list[str]:
-    """HWPX(OWPML)는 zip+XML 구조. 네임스페이스에 무관하게 <p> 문단 안의 <t> 텍스트런을 모은다."""
-    import zipfile
-    from xml.etree import ElementTree as ET
-
-    lines: list[str] = []
-    with zipfile.ZipFile(path) as zf:
-        section_names = sorted(n for n in zf.namelist() if n.startswith("Contents/section") and n.endswith(".xml"))
-        for name in section_names:
-            root = ET.fromstring(zf.read(name))
-            for elem in root.iter():
-                if elem.tag.rsplit("}", 1)[-1] != "p":
-                    continue
-                text = "".join(t.text or "" for t in elem.iter() if t.tag.rsplit("}", 1)[-1] == "t")
-                if text.strip():
-                    lines.append(text)
-    return lines
-
-
-def _extract_hwp_lines(path: str) -> list[str]:
-    """구형 바이너리 .hwp는 pyhwp(hwp5txt)로 추출한다(OLE+zlib 압축 레코드를 직접 파싱하는 대신
-    검증된 오픈소스 파서를 사용). 표/그림은 <표>/<그림> 플레이스홀더로만 나오고 내용은 유실된다."""
-    import subprocess
-
-    result = subprocess.run(["hwp5txt", path], capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise ValueError(f"hwp5txt 실행 실패: {result.stderr.strip() or result.returncode}")
-    return [line for line in result.stdout.splitlines() if line.strip() and line.strip() not in ("<표>", "<그림>")]
-
-
-_EXTRACTORS = {
-    "docx": _extract_docx_lines,
-    "xlsx": _extract_xlsx_lines,
-    "hwpx": _extract_hwpx_lines,
-    "hwp": _extract_hwp_lines,
-}
-
-
-def _render_lines_to_pdf(lines: list[str], output_path: str) -> None:
-    """추출된 텍스트를 A4 페이지에 순서대로 흘려 넣어 PDF를 만든다. 원본 시각적 레이아웃은
-    보존하지 않지만(표는 " | "로 이어붙인 한 줄이 됨), 텍스트 자체는 실제 원문 그대로이므로
-    이후 run_ocr/extract_contract_fields가 그대로 동작한다."""
-    import textwrap
-
-    # line_height를 font_size의 3배로 넉넉히 둬서 run_ocr의 블록 분리가 원래 줄 단위와 일치하게 한다
-    # (간격이 좁으면 PyMuPDF가 인접 줄을 하나의 블록으로 합쳐 필드 추출 시 값이 섞일 수 있음)
-    width, height, margin, font_size, line_height = 595, 842, 50, 10, 30
-    doc = fitz.open()
-    page = doc.new_page(width=width, height=height)
-    y = margin
-    for line in lines:
-        for wrapped in textwrap.wrap(line, width=72) or [""]:
-            if y > height - margin:
-                page = doc.new_page(width=width, height=height)
-                y = margin
-            page.insert_text((margin, y), wrapped, fontsize=font_size, fontname="korea-s")
-            y += line_height
-    doc.save(output_path)
-    doc.close()
+# ==================== 1. 문서 파싱 / 2. OCR ====================
 
 
 def normalize_to_pdf(input_path: str, source_format: str, output_path: str) -> NormalizedDocument:
-    if source_format not in _SUPPORTED_FORMATS:
-        raise UnsupportedFormatError(f"'{source_format}' 포맷은 아직 지원하지 않습니다")
-
-    if source_format == "pdf":
-        shutil.copyfile(input_path, output_path)
-    else:
-        lines = _EXTRACTORS[source_format](input_path)
-        _render_lines_to_pdf(lines, output_path)
-
-    doc = fitz.open(output_path)
-    try:
-        pages: list[PageMetaDict] = []
-        for page in doc:
-            rect = page.rect
-            has_text = bool(page.get_text("text").strip())
-            pages.append(
-                {
-                    "page_no": page.number + 1,
-                    "width_pt": rect.width,
-                    "height_pt": rect.height,
-                    "rotation": page.rotation,
-                    "has_text_layer": has_text,
-                }
-            )
-        return {"normalized_pdf_path": output_path, "pages": pages}
-    finally:
-        doc.close()
+    return ai_parser.normalize_to_pdf(input_path, source_format, output_path)
 
 
-# ==================== 2. OCR / Layout ====================
-
-
-def run_ocr(pdf_path: str) -> list[OcrLineDict]:
-    doc = fitz.open(pdf_path)
-    try:
-        lines: list[OcrLineDict] = []
-        for page in doc:
-            page_no = page.number + 1
-            width, height = page.rect.width, page.rect.height
-            if width <= 0 or height <= 0:
-                continue
-            blocks = [b for b in page.get_text("blocks") if b[4].strip()]
-            blocks.sort(key=lambda b: (round(b[1], 1), b[0]))
-            for i, (x0, y0, x1, y1, text, *_rest) in enumerate(blocks, start=1):
-                lines.append(
-                    {
-                        "page_no": page_no,
-                        "line_id": f"L{page_no}-{i}",
-                        "text": text.strip(),
-                        "bbox": [x0 / width, y0 / height, x1 / width, y1 / height],
-                        "confidence": 1.0,  # 텍스트 레이어 직접 추출이라 OCR 신뢰도 개념 없음(항상 1.0)
-                        "source": "pdf_text",
-                        "table_cell": None,
-                    }
-                )
-        return lines
-    finally:
-        doc.close()
+def run_ocr(pdf_path: str, engine: str | None = None) -> list[OcrLineDict]:
+    """native 페이지는 텍스트 레이어, scan 페이지는 OCR 엔진(engine: auto|paddle_vl|paddle|tesseract)."""
+    return ai_ocr.run_ocr(pdf_path, engine)
 
 
 # ==================== 3. 정보추출 ====================
@@ -392,7 +194,40 @@ def _apply_fallbacks(ocr_lines: list[OcrLineDict], results: list[ExtractionField
                 break
 
 
+RULE_BASED_VERSION = "rule-based-v1"
+LLMCache = MutableMapping[str, Any]
+
+
+class ExtractionMetaDict(TypedDict):
+    """extractions 행 메타 (03_데이터정의 §5.5)."""
+
+    model_name: str
+    prompt_version: str
+    raw_llm_output: dict | None
+
+
+def extraction_model_name() -> str:
+    llm = LLMClient.from_env()
+    return f"{llm.model}@{ai_extract.PROMPT_VERSION}" if llm else RULE_BASED_VERSION
+
+
+def extract_contract_fields_with_meta(
+    ocr_lines: list[OcrLineDict], llm_cache: LLMCache | None = None
+) -> tuple[list[ExtractionFieldDict], ExtractionMetaDict]:
+    """LLM 구조화 추출 + bbox 4단 역매핑 + 정규화, 그리고 extractions 행 메타(model_name·prompt_version·raw_llm_output).
+    LLM 미설정이면 규칙 기반 대체. llm_cache는 llm_cache 테이블 매핑(app/services/llm_cache.py)."""
+    llm = LLMClient.from_env(cache=llm_cache)
+    if llm is None:
+        return _extract_rule_based(ocr_lines), {"model_name": RULE_BASED_VERSION, "prompt_version": RULE_BASED_VERSION, "raw_llm_output": None}
+    fields, meta = ai_extract.extract_fields(ocr_lines, llm)
+    return fields, {"model_name": meta["model_name"], "prompt_version": meta["prompt_version"], "raw_llm_output": meta["raw_llm_output"]}
+
+
 def extract_contract_fields(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:
+    return extract_contract_fields_with_meta(ocr_lines)[0]
+
+
+def _extract_rule_based(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:
     results: list[ExtractionFieldDict] = []
     for code in FIELD_CODES:
         candidates = _find_lines(ocr_lines, FIELD_KEYWORDS[code])
@@ -465,29 +300,10 @@ def _extract_one(ocr_lines: list[OcrLineDict], code: str, line: OcrLineDict) -> 
 
 # ==================== 4. 위험조항 탐지 ====================
 
-FIELD_LABELS: dict[str, str] = {
-    "contract_name": "계약건명",
-    "contract_amount": "계약금액",
-    "guarantee_amount": "보증금액",
-    "contract_date": "계약일자",
-    "performance_due_date": "계약이행기일",
-    "guarantee_period": "보증기간",
-    "creditor_name": "채권자명",
-    "creditor_biz_no": "채권자 사업자번호",
-}
 _PENALTY_PERMILLE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*1000")
 _PENALTY_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 _PENALTY_RATE_STANDARD = 0.1  # 표준계약서 기준 지체상금율(%/일), 1.0(=기준의 3배)에서 score=1.0이 되도록 정규화
 _PENALTY_RATE_FULL_SCORE = 0.3
-
-
-def _severity_from_score(score: float) -> str:
-    """03_API_명세서 설계의 통일 기준: score>=0.75 HIGH, >=0.45 MEDIUM, 그 외 LOW."""
-    if score >= 0.75:
-        return "HIGH"
-    if score >= 0.45:
-        return "MEDIUM"
-    return "LOW"
 
 
 # 관리자가 DB(risk_rules)에서 조정 가능한 규칙의 기본값. app/core/seed.py가 최초 1회 이 값으로 채운다.
@@ -550,15 +366,66 @@ DEFAULT_RISK_RULES: list[dict] = [
 class RiskRuleDict(TypedDict):
     rule_code: str
     category: str
-    rule_type: str  # field_missing | keyword | penalty_rate | period_contradiction
+    rule_type: str  # field_missing | keyword | penalty_rate | period_contradiction | doc
     title: str
     description: str
     keywords: list[str] | None
     field_code: str | None
     base_score: float | None
+    engine: NotRequired[str | None]  # rule | llm: 03_데이터정의 §6.1 문서형 룰. None = 기존(오프라인 keyword) 행
+    params: NotRequired[dict | None]
+    default_severity: NotRequired[str | None]
 
 
-def detect_risks(ocr_lines: list[OcrLineDict], fields: list[ExtractionFieldDict], rules: list[RiskRuleDict]) -> list[RiskFindingDict]:
+def doc_risk_rules() -> list[dict]:
+    """ai/risk/rules.yaml(03_데이터정의 §6.1)을 risk_rules 행 형태로. app/core/seed.py가 시드한다."""
+    return [
+        {
+            "rule_code": r["code"],
+            "category": r["category"],
+            "rule_type": "doc",
+            "title": r["name"],
+            "description": r["name"],
+            "engine": r["engine"],
+            "params": r.get("params") or {},
+            "default_severity": r.get("default_severity"),
+            "enabled": r.get("is_active", True),
+        }
+        for r in ai_risk.load_rules()
+    ]
+
+
+def detect_risks(
+    ocr_lines: list[OcrLineDict],
+    fields: list[ExtractionFieldDict],
+    rules: list[RiskRuleDict],
+    policy_search: Callable[[str], list[dict]] | None = None,
+    llm_cache: LLMCache | None = None,
+) -> list[RiskFindingDict]:
+    """룰 엔진(PENALTY_RATE_HIGH·MISSING_ARTICLE·AMOUNT_MISMATCH·DATE_INCONSISTENT) + LLM 엔진(TOXIC_CLAUSE·
+    CONTRADICTION_LLM·POLICY_VIOLATION) 병렬. policy_search(query)->규정 청크 목록은 Backend가 RAG 검색으로 주입.
+    rules 중 engine이 채워진 행(DB risk_rules의 문서형 룰, 활성 행만 전달됨)을 YAML 형태로 바꿔 ai.risk에 넘긴다."""
+    llm = LLMClient.from_env(cache=llm_cache)
+    doc_rules = [
+        {
+            "code": r["rule_code"],
+            "name": r["title"],
+            "category": r["category"],
+            "engine": r["engine"],
+            "params": r.get("params") or {},
+            "default_severity": r.get("default_severity"),
+            "is_active": True,
+        }
+        for r in rules
+        if r.get("engine")
+    ]
+    findings = ai_risk.detect_risks(ocr_lines, fields, rules=doc_rules, llm=llm, policy_search=policy_search)
+    if llm is None:  # 오프라인: keyword 룰이 LLM 룰(독소·규정위배)을 대신한다
+        findings += _detect_risks_keyword(ocr_lines, fields, [r for r in rules if r["rule_type"] == "keyword"])
+    return findings
+
+
+def _detect_risks_keyword(ocr_lines: list[OcrLineDict], fields: list[ExtractionFieldDict], rules: list[RiskRuleDict]) -> list[RiskFindingDict]:
     findings: list[RiskFindingDict] = []
     by_code = {f["field_code"]: f for f in fields}
 
@@ -569,7 +436,7 @@ def detect_risks(ocr_lines: list[OcrLineDict], fields: list[ExtractionFieldDict]
                 findings.append(
                     {
                         "category": rule["category"],
-                        "severity": _severity_from_score(score),
+                        "severity": ai_risk.severity_of(score),
                         "score": score,
                         "rule_code": rule["rule_code"],
                         "title": rule["title"],
@@ -589,7 +456,7 @@ def detect_risks(ocr_lines: list[OcrLineDict], fields: list[ExtractionFieldDict]
                 findings.append(
                     {
                         "category": rule["category"],
-                        "severity": _severity_from_score(score),
+                        "severity": ai_risk.severity_of(score),
                         "score": score,
                         "rule_code": rule["rule_code"],
                         "title": rule["title"],
@@ -626,7 +493,7 @@ def detect_risks(ocr_lines: list[OcrLineDict], fields: list[ExtractionFieldDict]
                 findings.append(
                     {
                         "category": rule["category"],
-                        "severity": _severity_from_score(score),
+                        "severity": ai_risk.severity_of(score),
                         "score": score,
                         "rule_code": rule["rule_code"],
                         "title": title,

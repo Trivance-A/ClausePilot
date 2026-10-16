@@ -12,6 +12,7 @@ from app.models import (  # noqa: F401
     guarantee,
     highlight,
     job,
+    llm_cache,
     regulation,
     risk,
     risk_rule,
