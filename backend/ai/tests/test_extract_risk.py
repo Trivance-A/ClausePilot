@@ -4,17 +4,10 @@ import urllib.error
 
 import pytest
 
-from ai.extract import SCHEMA, extract_fields, select_lines
+from ai.extract import MAX_PROMPT_CHARS, SCHEMA, extract_fields, format_lines, select_lines, with_title, wrong_shape
 from ai.llm import LLMClient, LLMUnavailableError, prompt_hash
 from ai.ocr import run_ocr
-from ai.risk import (
-    detect_risks,
-    load_rules,
-    merge_findings,
-    penalty_rates,
-    policy_query,
-    severity_of,
-)
+from ai.risk import detect_risks, load_rules, merge_findings, penalty_rates, policy_query, severity_of
 from ai.tests.fixtures import contract_pdf
 from ai.types import FIELD_CODES
 
@@ -24,12 +17,15 @@ class FakeLLM:
 
     model = "fake-7b"
 
-    def __init__(self, extract=None, requery=None, risk=None):
-        self.extract, self.requery, self.risk = extract or {}, requery or {"evidence_line_ids": []}, risk or {}
+    def __init__(self, extract=None, requery=None, risk=None, retry=None):
+        self.extract, self.requery, self.risk = (extract or {}, requery or {"evidence_line_ids": []}, risk or {})
+        self.retry = retry
         self.calls = []
 
     def chat_json(self, system, prompt, schema, *, prompt_version, name="output"):
         self.calls.append((prompt_version, system, prompt))
+        if prompt_version.startswith("extract-retry") and self.retry is not None:
+            return self.retry
         if prompt_version.startswith("extract"):
             return self.extract
         if prompt_version.startswith("requery"):
@@ -87,7 +83,7 @@ def test_extract_fields_end_to_end(lines):
     }
     assert all(h["ocr_line_id"] and len(h["bbox"]) == 4 for x in fields for h in x["highlights"])
     assert by["contract_name"]["confidence"] > by["guarantee_amount"]["confidence"] > 0
-    assert meta == {"model_name": "fake-7b", "prompt_version": "extract-v1", "raw_llm_output": llm.extract}
+    assert meta == {"model_name": "fake-7b", "prompt_version": "extract-v4", "raw_llm_output": llm.extract}
     assert "L1-1: 공 사 도 급 계 약 서" in llm.calls[0][2]
 
 
@@ -104,6 +100,68 @@ def test_value_not_in_document_is_dropped_as_fabricated(lines):
     }
     assert meta["raw_llm_output"]["contract_name"]["raw_value"] == "존재하지 않는 공사명 ABC"  # kept for audit only
     assert any(v.startswith("requery") for v, _, _ in llm.calls)
+
+
+def test_wrong_shaped_values_are_asked_again_once(lines):
+    first = {
+        "contract_date": f("년     월     일"),
+        "creditor_name": f("발주자(갑)"),
+        "contract_name": f("공사도급계약서"),
+        "contract_amount": f("일금 삼억오천만원정 (₩350,000,000)"),
+    }
+    retry = {"contract_date": f("2026년 3월 5일"), "creditor_name": f("주식회사 한빛도시공사"), "contract_name": f("미연동계약서")}
+    llm = FakeLLM(extract=first, retry=retry)
+    fields, meta = extract_fields(lines, llm)
+    by = {x["field_code"]: x for x in fields}
+    assert by["contract_date"]["normalized_value"] == {"date": "2026-03-05"}
+    assert by["creditor_name"]["normalized_value"] == {"text": "(주)한빛도시공사"}
+    assert by["contract_name"]["raw_value"] is None  # still a form title after the retry -> null, not a guess
+    assert by["contract_amount"]["normalized_value"] == {"amount": 350_000_000}  # valid first answers are not re-asked
+    retries = [p for v, _, p in llm.calls if v.startswith("extract-retry")]
+    assert len(retries) == 1 and "contract_date" in retries[0] and "contract_amount" not in retries[0].split("[다시 찾을 항목]")[1]
+    assert meta["raw_llm_output"]["_retry"] == retry and meta["raw_llm_output"]["contract_date"]["raw_value"] == "년     월     일"
+
+
+def test_ocr_garbled_typed_value_survives_a_failed_retry(lines):
+    llm = FakeLLM(extract={"contract_date": f("2026년 3윌 5일")}, retry={"contract_date": f("추정되지 않음")})
+    fields, _ = extract_fields(lines, llm)
+    assert fields[3]["field_code"] == "contract_date" and fields[3]["raw_value"] == "2026년 3윌 5일"  # kept for manual fix
+
+
+def test_unlabeled_signature_date_fills_a_missed_contract_date():
+    sig = [
+        {"page_no": 1, "line_id": f"L1-{i}", "text": t, "bbox": [0.1, 0.1 * i, 0.5, 0.1 * i + 0.02], "confidence": 1, "source": "pdf_text", "table_cell": None}
+        for i, t in enumerate(["공사도급표준계약서", "95.6.30 승인", "공사명 : 도로 공사", "2026. 6. 23.", "계약담당공무원 (인)"], 1)
+    ]
+    fields, _ = extract_fields(sig, FakeLLM())
+    assert fields[3]["normalized_value"] == {"date": "2026-06-23"} and fields[3]["highlights"][0]["ocr_line_id"] == "L1-4"
+    pledge = [{**ln, "text": "각서"} if ln["line_id"] == "L1-1" else ln for ln in sig]
+    assert extract_fields(pledge, FakeLLM())[0][3]["raw_value"] is None  # not a contract -> its signing date is not a contract date
+
+
+def test_contract_period_start_is_only_a_suggestion():
+    rows = ["용역표준계약서", "용역명 : 청사 경비", "계약기간", "2026. 6. 12. ~ 2026. 11. 28."]
+    ls = [
+        {"page_no": 1, "line_id": f"L1-{i}", "text": t, "bbox": [0.1, 0.1 * i, 0.5, 0.1 * i + 0.02], "confidence": 1, "source": "pdf_text", "table_cell": None}
+        for i, t in enumerate(rows, 1)
+    ]
+    date = extract_fields(ls, FakeLLM())[0][3]
+    assert date["raw_value"] is None and date["confidence"] == 0.0  # not an answer
+    assert date["normalized_value"] == {"suggestion": {"date": "2026-06-12", "source": "contract_period_start", "ocr_line_id": "L1-4"}}
+
+
+def test_with_title():
+    lines = [{"line_id": "L1-1", "text": "가람시 시설관리공단 이사장 귀하"}, {"line_id": "L1-2", "text": "(주)한빛건설 대표"}]
+    assert with_title("가람시시설관리공단", lines) == "가람시시설관리공단 이사장"
+    assert with_title("(주)한빛건설", lines) == "(주)한빛건설"  # "대표" is not a 장 title
+    assert with_title("누리도 건설본부장", lines) == "누리도 건설본부장"
+
+
+def test_wrong_shape():
+    assert wrong_shape("contract_date", "년 월 일", None) and not wrong_shape("contract_date", "2026. 3. 5.", {"date": "2026-03-05"})
+    assert wrong_shape("creditor_name", "원사업자등", {"text": "원사업자등"}) and not wrong_shape("creditor_name", "(주)바른물류", {"text": "(주)바른물류"})
+    assert wrong_shape("contract_name", "【별첨】", {"text": "【별첨】"}) and not wrong_shape("contract_name", "누리천 제방 보강 공사", {"text": "x"})
+    assert wrong_shape("guarantee_period", "미연동 합의", None) and not wrong_shape("guarantee_period", "계약일 로부터 준공일 까지", None)
 
 
 def test_ocr_garbled_lookalike_is_kept_for_manual_fix(lines):
@@ -127,6 +185,10 @@ def test_long_documents_are_windowed():
     ]
     picked = select_lines(many)
     assert len(picked) == 21 and picked[10]["line_id"] == "L7-5"
+    huge = [{**many[0], "line_id": f"L1-{i}", "text": "계약금액 " + "가" * 100} for i in range(1, 400)]
+    capped = select_lines(huge)
+    assert 0 < len(capped) < len(huge) and capped[0]["line_id"] == "L1-1"
+    assert len(format_lines(capped)) <= MAX_PROMPT_CHARS
 
 
 def test_penalty_rate_parsing():

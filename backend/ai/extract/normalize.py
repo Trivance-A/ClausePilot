@@ -12,7 +12,19 @@ import re
 import unicodedata
 from datetime import date, timedelta
 
-_DIGIT = {"영": 0, "공": 0, "일": 1, "이": 2, "삼": 3, "사": 4, "오": 5, "육": 6, "칠": 7, "팔": 8, "구": 9}
+_DIGIT = {
+    "영": 0,
+    "공": 0,
+    "일": 1,
+    "이": 2,
+    "삼": 3,
+    "사": 4,
+    "오": 5,
+    "육": 6,
+    "칠": 7,
+    "팔": 8,
+    "구": 9,
+}
 _SMALL = {"십": 10, "백": 100, "천": 1000}
 _BIG = {"만": 10**4, "억": 10**8, "조": 10**12}
 KOR_AMOUNT_RE = re.compile(r"([영공일이삼사오육칠팔구십백천만억조\d,\s]*[십백천만억조][영공일이삼사오육칠팔구십백천만억조\d,\s]*?)\s*원")
@@ -122,7 +134,8 @@ def normalize_period(text: str, contract_date: str | None, due_date: str | None)
     dates = parse_dates(text)
     if len(dates) >= 2:
         return {"start": dates[0], "end": dates[1]}
-    from_contract = contract_date if contract_date and any(w in text for w in _START_WORDS) else None
+    compact = re.sub(r"\s", "", text)  # OCR splits words: "계약 일 로부터 준 공 일 까 지"
+    from_contract = contract_date if contract_date and any(w in compact for w in _START_WORDS) else None
     if dates and from_contract:  # "계약일로부터 2027. 3. 4.까지"
         return {"start": from_contract, "end": dates[0], "derived": True}
     start = dates[0] if dates else from_contract
@@ -132,8 +145,12 @@ def normalize_period(text: str, contract_date: str | None, due_date: str | None)
     for rx in _DATE_RES:  # drop the date itself so "2026년 3월 5일" is not read as a duration
         rest = rx.sub(" ", unicodedata.normalize("NFKC", rest))
     if m := _DURATION_RE.search(rest):
-        return {"start": start, "end": _add(start, int(m.group(1)), m.group(2)), "derived": True}
-    if due_date and any(w in rest for w in _END_WORDS):
+        return {
+            "start": start,
+            "end": _add(start, int(m.group(1)), m.group(2)),
+            "derived": True,
+        }
+    if due_date and any(w in re.sub(r"\s", "", rest) for w in _END_WORDS):
         return {"start": start, "end": due_date, "derived": True}
     return None
 
@@ -151,7 +168,10 @@ def biz_no_checksum_ok(digits: str) -> bool:
 def normalize_biz_no(text: str) -> dict | None:
     if not (m := _BIZ_RE.search(unicodedata.normalize("NFKC", text))):
         return None
-    return {"text": "-".join(m.groups()), "checksum_valid": biz_no_checksum_ok("".join(m.groups()))}
+    return {
+        "text": "-".join(m.groups()),
+        "checksum_valid": biz_no_checksum_ok("".join(m.groups())),
+    }
 
 
 def _clean(text: str) -> str:
@@ -163,10 +183,11 @@ def _clean(text: str) -> str:
 def normalize_company(text: str) -> dict | None:
     t = _clean(text)
     t = re.sub(r"\s*귀하$", "", t)
-    t = re.sub(r"\(\s*주\s*\)", "(주)", t)
+    t = re.sub(r"\(\s*주\s*\)|^주\s*\)", "(주)", t)  # "주)미래기계": LLM/OCR dropped the "("
     t = re.sub(r"^주식회사\s*(.+)$", r"(주)\1", t)
     t = re.sub(r"^(.+?)\s*주식회사$", r"\1(주)", t)
     t = re.sub(r"\s*\(주\)\s*", "(주)", t).strip()
+    t = re.sub(r"(?<=[가-힣])\s+(?=[가-힣])", "", t)  # OCR splits Hangul names: "한빛 시청" == "한빛시청"
     return {"text": t} if t else None
 
 

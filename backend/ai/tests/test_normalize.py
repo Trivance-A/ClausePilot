@@ -96,6 +96,11 @@ def test_periods():
     assert normalize_period("2026년 3월 5일부터 1년간", None, None) == {"start": "2026-03-05", "end": "2027-03-04", "derived": True}
     assert normalize_period("계약일로부터 12개월", "2026-03-05", None) == {"start": "2026-03-05", "end": "2027-03-04", "derived": True}
     assert normalize_period("계약일로부터 준공일까지", None, None) is None  # nothing to resolve against
+    assert normalize_period("계약 일 로부터 준 공 일 까 지", "2026-03-05", "2026-12-31") == {
+        "start": "2026-03-05",
+        "end": "2026-12-31",
+        "derived": True,
+    }  # OCR spacing
 
 
 def test_biz_no():
@@ -113,6 +118,8 @@ def test_biz_no():
         ("㈜한빛", "(주)한빛"),
         ("( 주 ) 한빛", "(주)한빛"),
         ('"한빛공사" 귀하', "한빛공사"),
+        ("누리 구 청", "누리구청"),
+        ("주)미래기계", "(주)미래기계"),  # OCR spacing inside a Hangul name
     ],
 )
 def test_company(text, expected):
