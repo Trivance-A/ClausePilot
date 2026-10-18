@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+  }
+  * { @apply border-border; }
+  html, body, #root { height: 100%; }
+  body { @apply bg-slate-50 text-foreground antialiased; }
+}
+
+@layer utilities {
+  /* 위험조항 오버레이 빗금 패턴 (색상만으로 구분하지 않도록) */
+  .hatch-high { background-image: repeating-linear-gradient(45deg, rgba(220,38,38,.35) 0 4px, transparent 4px 9px); }
+  .hatch-medium { background-image: repeating-linear-gradient(45deg, rgba(249,115,22,.35) 0 4px, transparent 4px 9px); }
+  .hatch-low { background-image: repeating-linear-gradient(45deg, rgba(234,179,8,.4) 0 4px, transparent 4px 9px); }
+  .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+}
