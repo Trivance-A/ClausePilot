@@ -1,0 +1,75 @@
+{
+  "doc_id": "ftc_food",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_food.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "도서관 서가 및 열람대 구매",
+      "page": 1,
+      "bbox": [
+        0.5042,
+        0.28741,
+        0.7563,
+        0.30166
+      ],
+      "raw_text": "도서관 서가 및 열람대 구매"
+    },
+    "contract_amount": {
+      "value": 685000000,
+      "page": 1,
+      "bbox": [
+        0.23529,
+        0.32542,
+        0.68908,
+        0.33967
+      ],
+      "raw_text": "일금 육억팔천오백만원정 (￦685,000,000)"
+    },
+    "guarantee_amount": null,
+    "contract_date": {
+      "value": "2026-08-22",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.34442,
+        0.28571,
+        0.35867
+      ],
+      "raw_text": "2026년 8월 22일"
+    },
+    "performance_due_date": {
+      "value": "2027-01-07",
+      "page": 1,
+      "bbox": [
+        0.58824,
+        0.30641,
+        0.77311,
+        0.32067
+      ],
+      "raw_text": "2027년 1월 7일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "(주)미래기계",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.38242,
+        0.38655,
+        0.39667
+      ],
+      "raw_text": "(주)미래기계"
+    },
+    "creditor_biz_no": {
+      "value": "440-38-14670",
+      "page": 2,
+      "bbox": [
+        0.21849,
+        0.40143,
+        0.42017,
+        0.41568
+      ],
+      "raw_text": "440-38-14670"
+    }
+  }
+}

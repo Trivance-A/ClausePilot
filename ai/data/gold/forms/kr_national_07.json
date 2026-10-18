@@ -1,0 +1,88 @@
+{
+  "doc_id": "kr_national_07",
+  "source_type": "native",
+  "source": "data/samples/law/kr_national_07.pdf",
+  "labels": {
+    "contract_name": {
+      "value": "새솔군 정수장 노후관 교체 공사",
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.24717,
+        0.48278,
+        0.26194
+      ],
+      "raw_text": "새솔군 정수장 노후관 교체 공사"
+    },
+    "contract_amount": {
+      "value": 760000000,
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.27824,
+        0.49932,
+        0.29301
+      ],
+      "raw_text": "금 칠억육천만원정(￦760,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 114000000,
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.34039,
+        0.51236,
+        0.35515
+      ],
+      "raw_text": "금 일억천사백만원정(￦114,000,000)"
+    },
+    "contract_date": {
+      "value": "2026-06-23",
+      "page": 1,
+      "bbox": [
+        0.31159,
+        0.84648,
+        0.37918,
+        0.86125
+      ],
+      "raw_text": "2026. 6. 23."
+    },
+    "performance_due_date": {
+      "value": "2027-03-02",
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.49703,
+        0.35992,
+        0.51179
+      ],
+      "raw_text": "2027. 3. 2."
+    },
+    "guarantee_period": {
+      "value": {
+        "start": "2027-03-03",
+        "end": "2029-03-01"
+      },
+      "page": 1,
+      "bbox": [
+        0.57888,
+        0.61626,
+        0.70687,
+        0.63102
+      ],
+      "raw_text": "2027. 3. 3.~2029. 3. 1."
+    },
+    "creditor_name": {
+      "value": "누리도 건설본부장",
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.16664,
+        0.40732,
+        0.18141
+      ],
+      "raw_text": "누리도 건설본부장"
+    },
+    "creditor_biz_no": null
+  }
+}

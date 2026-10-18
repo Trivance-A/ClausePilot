@@ -1,0 +1,85 @@
+{
+  "doc_id": "ftc_is_development",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_is_development.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "통합민원시스템 유지관리 용역",
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.32542,
+        0.55462,
+        0.33967
+      ],
+      "raw_text": "통합민원시스템 유지관리 용역"
+    },
+    "contract_amount": {
+      "value": 783000000,
+      "page": 1,
+      "bbox": [
+        0.26891,
+        0.42043,
+        0.72269,
+        0.43468
+      ],
+      "raw_text": "일금 칠억팔천삼백만원정 (￦783,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 117450000,
+      "page": 1,
+      "bbox": [
+        0.40336,
+        0.80048,
+        0.60504,
+        0.81473
+      ],
+      "raw_text": "117,450,000원"
+    },
+    "contract_date": {
+      "value": "2026-07-13",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.57245,
+        0.28571,
+        0.5867
+      ],
+      "raw_text": "2026년 7월 13일"
+    },
+    "performance_due_date": {
+      "value": "2027-03-26",
+      "page": 1,
+      "bbox": [
+        0.58824,
+        0.40143,
+        0.78992,
+        0.41568
+      ],
+      "raw_text": "2027년 3월 26일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "(주)솔빛화학",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.61045,
+        0.38655,
+        0.6247
+      ],
+      "raw_text": "(주)솔빛화학"
+    },
+    "creditor_biz_no": {
+      "value": "339-19-68031",
+      "page": 2,
+      "bbox": [
+        0.21849,
+        0.62945,
+        0.42017,
+        0.64371
+      ],
+      "raw_text": "339-19-68031"
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "doc_id": "ftc_elevator_work",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_elevator_work.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "누리천 제방 보강 공사",
+      "page": 1,
+      "bbox": [
+        0.28571,
+        0.43943,
+        0.48739,
+        0.45368
+      ],
+      "raw_text": "누리천 제방 보강 공사"
+    },
+    "contract_amount": {
+      "value": 92500000,
+      "page": 1,
+      "bbox": [
+        0.30252,
+        0.57245,
+        0.7395,
+        0.5867
+      ],
+      "raw_text": "일금 구천이백오십만원정 (￦92,500,000)"
+    },
+    "guarantee_amount": {
+      "value": 13875000,
+      "page": 2,
+      "bbox": [
+        0.33613,
+        0.26841,
+        0.80672,
+        0.28266
+      ],
+      "raw_text": "일금 천삼백팔십칠만오천원정 (￦13,875,000)"
+    },
+    "contract_date": {
+      "value": "2026-04-08",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.89549,
+        0.26891,
+        0.90974
+      ],
+      "raw_text": "2026년 4월 8일"
+    },
+    "performance_due_date": {
+      "value": "2027-03-19",
+      "page": 1,
+      "bbox": [
+        0.40336,
+        0.51544,
+        0.60504,
+        0.52969
+      ],
+      "raw_text": "2027년 3월 19일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "주식회사 바른물류",
+      "page": 3,
+      "bbox": [
+        0.26891,
+        0.05938,
+        0.42017,
+        0.07363
+      ],
+      "raw_text": "주식회사 바른물류"
+    },
+    "creditor_biz_no": {
+      "value": "502-38-32812",
+      "page": 3,
+      "bbox": [
+        0.2521,
+        0.07838,
+        0.45378,
+        0.09264
+      ],
+      "raw_text": "502-38-32812"
+    }
+  }
+}

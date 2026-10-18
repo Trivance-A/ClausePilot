@@ -1,0 +1,75 @@
+{
+  "doc_id": "kr_national_08",
+  "source_type": "native",
+  "source": "data/samples/law/kr_national_08.pdf",
+  "labels": {
+    "contract_name": {
+      "value": "소방용 방화복 제조·구매",
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.26085,
+        0.44033,
+        0.27562
+      ],
+      "raw_text": "소방용 방화복 제조·구매"
+    },
+    "contract_amount": {
+      "value": 850500000,
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.29193,
+        0.52541,
+        0.30669
+      ],
+      "raw_text": "금 팔억오천오십만원정(￦850,500,000)"
+    },
+    "guarantee_amount": {
+      "value": 127575000,
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.35407,
+        0.59066,
+        0.36883
+      ],
+      "raw_text": "금 일억이천칠백오십칠만오천원정(￦127,575,000)"
+    },
+    "contract_date": {
+      "value": "2026-07-09",
+      "page": 1,
+      "bbox": [
+        0.31275,
+        0.70165,
+        0.37315,
+        0.71642
+      ],
+      "raw_text": "2026. 7. 9."
+    },
+    "performance_due_date": {
+      "value": "2027-04-20",
+      "page": 1,
+      "bbox": [
+        0.38109,
+        0.447,
+        0.44867,
+        0.46176
+      ],
+      "raw_text": "2027. 4. 20."
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "누리도 건설본부장",
+      "page": 1,
+      "bbox": [
+        0.29952,
+        0.16664,
+        0.40732,
+        0.18141
+      ],
+      "raw_text": "누리도 건설본부장"
+    },
+    "creditor_biz_no": null
+  }
+}

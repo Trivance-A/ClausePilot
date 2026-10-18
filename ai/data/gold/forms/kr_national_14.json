@@ -1,0 +1,15 @@
+{
+  "doc_id": "kr_national_14",
+  "source_type": "native",
+  "source": "data/samples/law/kr_national_14.pdf",
+  "labels": {
+    "contract_name": null,
+    "contract_amount": null,
+    "guarantee_amount": null,
+    "contract_date": null,
+    "performance_due_date": null,
+    "guarantee_period": null,
+    "creditor_name": null,
+    "creditor_biz_no": null
+  }
+}

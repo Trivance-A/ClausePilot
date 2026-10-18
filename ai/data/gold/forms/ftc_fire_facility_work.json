@@ -1,0 +1,75 @@
+{
+  "doc_id": "ftc_fire_facility_work",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_fire_facility_work.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "새솔군 정수장 노후관 교체 공사",
+      "page": 1,
+      "bbox": [
+        0.23529,
+        0.28741,
+        0.52101,
+        0.30166
+      ],
+      "raw_text": "새솔군 정수장 노후관 교체 공사"
+    },
+    "contract_amount": {
+      "value": 655250000,
+      "page": 1,
+      "bbox": [
+        0.28571,
+        0.36342,
+        0.78992,
+        0.37767
+      ],
+      "raw_text": "일금 육억오천오백이십오만원정 (￦655,250,000)"
+    },
+    "guarantee_amount": null,
+    "contract_date": {
+      "value": "2026-04-23",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.26841,
+        0.28571,
+        0.28266
+      ],
+      "raw_text": "2026년 4월 23일"
+    },
+    "performance_due_date": {
+      "value": "2027-04-21",
+      "page": 1,
+      "bbox": [
+        0.40336,
+        0.34442,
+        0.60504,
+        0.35867
+      ],
+      "raw_text": "2027년 4월 21일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "주식회사 바른물류",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.30641,
+        0.42017,
+        0.32067
+      ],
+      "raw_text": "주식회사 바른물류"
+    },
+    "creditor_biz_no": {
+      "value": "206-32-21749",
+      "page": 2,
+      "bbox": [
+        0.2521,
+        0.32542,
+        0.45378,
+        0.33967
+      ],
+      "raw_text": "206-32-21749"
+    }
+  }
+}

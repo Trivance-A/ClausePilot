@@ -1,0 +1,65 @@
+{
+  "doc_id": "ftc_freight_transport",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_freight_transport.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "통합민원시스템 유지관리 용역",
+      "page": 1,
+      "bbox": [
+        0.23529,
+        0.34442,
+        0.48739,
+        0.35867
+      ],
+      "raw_text": "통합민원시스템 유지관리 용역"
+    },
+    "contract_amount": null,
+    "guarantee_amount": null,
+    "contract_date": {
+      "value": "2026-09-13",
+      "page": 3,
+      "bbox": [
+        0.08403,
+        0.05938,
+        0.28571,
+        0.07363
+      ],
+      "raw_text": "2026년 9월 13일"
+    },
+    "performance_due_date": {
+      "value": "2027-07-23",
+      "page": 1,
+      "bbox": [
+        0.57143,
+        0.36342,
+        0.77311,
+        0.37767
+      ],
+      "raw_text": "2027년 7월 23일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "주식회사 바른물류",
+      "page": 3,
+      "bbox": [
+        0.26891,
+        0.09739,
+        0.42017,
+        0.11164
+      ],
+      "raw_text": "주식회사 바른물류"
+    },
+    "creditor_biz_no": {
+      "value": "296-79-70078",
+      "page": 3,
+      "bbox": [
+        0.2521,
+        0.11639,
+        0.45378,
+        0.13064
+      ],
+      "raw_text": "296-79-70078"
+    }
+  }
+}

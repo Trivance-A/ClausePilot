@@ -1,0 +1,67 @@
+# risk_rules seed (03_데이터정의 §6.1). Same shape as the risk_rules table:
+# code, name, category(penalty|missing|contradiction|toxic|policy), engine(rule|llm), params, default_severity, is_active
+- code: PENALTY_RATE_HIGH
+  name: 지체상금율 과다
+  category: penalty
+  engine: rule
+  params:
+    max_rate_per_day: 0.001  # 1000분의 1 / day
+    keywords: [지체상금, 지연배상금, 지체배상금, 지연손해금, 위약금, liquidated damages]
+  default_severity: HIGH
+  is_active: true
+
+- code: MISSING_ARTICLE
+  name: 필수조항 누락
+  category: missing
+  engine: rule
+  params:
+    required:
+      계약금액: [계약금액, 계약대금, 도급금액, 공사대금, 용역대금]
+      계약기간: [계약기간, 공사기간, 용역기간, 이행기간, 착공, 준공, 납품기한, 계약이행기일]
+      지체상금: [지체상금, 지연배상금, 지체배상금]
+      하자담보: [하자담보, 하자보수, 하자보증, 하자책임]
+      계약해지: [계약해지, 계약의해지, 계약해제, 계약의해제]
+  default_severity: MEDIUM
+  is_active: true
+
+- code: AMOUNT_MISMATCH
+  name: 금액 표기 불일치
+  category: contradiction
+  engine: rule
+  params: {}  # 한글 금액 vs 숫자 금액
+  default_severity: HIGH
+  is_active: true
+
+- code: DATE_INCONSISTENT
+  name: 일자 모순
+  category: contradiction
+  engine: rule
+  params: {}  # 계약일자 > 이행기일, 보증기간 시작 > 종료
+  default_severity: HIGH
+  is_active: true
+
+- code: TOXIC_CLAUSE
+  name: 독소조항
+  category: toxic
+  engine: llm
+  params:
+    aspects: [일방적 계약해지, 무제한 손해배상 책임, 자동갱신, 관할법원 일방 지정, 일방적 면책, 과도한 위약벌]
+  default_severity: HIGH
+  is_active: true
+
+- code: CONTRADICTION_LLM
+  name: 조항 간 모순
+  category: contradiction
+  engine: llm
+  params: {}
+  default_severity: MEDIUM
+  is_active: true
+
+- code: POLICY_VIOLATION
+  name: 내부 기준 위배
+  category: policy
+  engine: llm
+  params:
+    top_k: 3  # RAG /search 결과 규정 청크 수
+  default_severity: MEDIUM
+  is_active: true

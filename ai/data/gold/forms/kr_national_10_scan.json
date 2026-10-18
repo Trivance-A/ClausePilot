@@ -1,0 +1,75 @@
+{
+  "doc_id": "kr_national_10_scan",
+  "source_type": "scan",
+  "source": "data/samples/law/kr_national_10.pdf",
+  "labels": {
+    "contract_name": {
+      "value": "가람초등학교 강당 증축 공사",
+      "page": 1,
+      "bbox": [
+        0.31623,
+        0.26527,
+        0.52104,
+        0.28622
+      ],
+      "raw_text": "가람초등학교 강당 증축 공사"
+    },
+    "contract_amount": {
+      "value": 545000000,
+      "page": 1,
+      "bbox": [
+        0.31041,
+        0.36089,
+        0.58745,
+        0.38404
+      ],
+      "raw_text": "금 오억사천오백만원정(￦545,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 54500000,
+      "page": 1,
+      "bbox": [
+        0.3075,
+        0.40874,
+        0.57577,
+        0.43162
+      ],
+      "raw_text": "금 오천사백오십만원정(￦54,500,000)"
+    },
+    "contract_date": {
+      "value": "2026-04-27",
+      "page": 1,
+      "bbox": [
+        0.68559,
+        0.32437,
+        0.7691,
+        0.34164
+      ],
+      "raw_text": "2026. 4. 27."
+    },
+    "performance_due_date": {
+      "value": "2026-10-11",
+      "page": 1,
+      "bbox": [
+        0.44658,
+        0.50884,
+        0.57384,
+        0.52743
+      ],
+      "raw_text": "2026년 10월 11일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "가람시 시설관리공단 이사장",
+      "page": 1,
+      "bbox": [
+        0.05081,
+        0.72251,
+        0.25145,
+        0.74333
+      ],
+      "raw_text": "가람시 시설관리공단 이사장"
+    },
+    "creditor_biz_no": null
+  }
+}

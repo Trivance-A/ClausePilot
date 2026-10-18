@@ -1,0 +1,319 @@
+"""문서/규정 업로드 후 RQ 워커 프로세스(app/core/queue.py)에서 실행되는 파이프라인 함수들.
+api 프로세스의 요청 컨텍스트와는 별도 프로세스/세션이므로 매번 새 DB 세션을 연다."""
+
+import uuid
+from datetime import datetime, timezone
+
+import pymupdf as fitz
+
+import app.models  # noqa: F401 - worker 프로세스가 이 모듈만 임포트해도 전체 모델이 Base.metadata에 등록되게 함
+from app.core.storage import normalized_dir, pages_dir
+from app.db.session import SessionLocal
+from app.models.document import Document, OcrLine, Page
+from app.models.extraction import Extraction, ExtractionField
+from app.models.highlight import Highlight
+from app.models.job import Job
+from app.models.regulation import Regulation, RegulationChunk, RegulationNode
+from app.models.risk import RiskFinding
+from app.models.risk_rule import RiskRule
+from app.services import ai_client as ai
+from app.services.llm_cache import DbLlmCache
+from app.services.search import search
+
+PAGE_IMAGE_DPI = 200  # FR-01 / 03_데이터정의 §5.3 pages.image_path
+
+_FIELD_LABELS = ai.FIELD_LABELS
+
+
+def _rebuild_node_tree(rows: list[RegulationNode]) -> list[ai.RegulationNodeDict]:
+    """DB에 저장된 평면 노드 목록(parent_id만 있음)을 parent_id 기준으로 다시 트리로 묶는다.
+    chunk_regulation이 조(article) 노드의 children(항 등)을 순회해 본문을 합치므로,
+    children이 실제로 채워진 트리를 넘겨야 한다(평면 목록에 children=[]를 넣으면 안 됨)."""
+    children_of: dict[uuid.UUID | None, list[RegulationNode]] = {}
+    for r in rows:
+        children_of.setdefault(r.parent_id, []).append(r)
+    for lst in children_of.values():
+        lst.sort(key=lambda r: r.sort_order)
+
+    def build(parent_id: uuid.UUID | None) -> list[ai.RegulationNodeDict]:
+        return [
+            {
+                "level": r.level, "number": r.number, "title": r.title, "path": r.path,
+                "page_no": r.page_no, "bbox": r.bbox, "content": r.content, "children": build(r.id),
+            }
+            for r in children_of.get(parent_id, [])
+        ]
+
+    return build(None)
+
+
+def _active_risk_rules(db) -> list[ai.RiskRuleDict]:
+    rows = db.query(RiskRule).filter(RiskRule.enabled.is_(True)).all()
+    return [
+        {
+            "rule_code": r.rule_code,
+            "category": r.category,
+            "rule_type": r.rule_type,
+            "title": r.title,
+            "description": r.description,
+            "keywords": r.keywords,
+            "field_code": r.field_code,
+            "base_score": r.base_score,
+            "engine": r.engine,
+            "params": r.params,
+            "default_severity": r.default_severity,
+        }
+        for r in rows
+    ]
+
+
+def _render_page_images(pdf_path: str, document_id: uuid.UUID) -> dict[int, str]:
+    """정규화 PDF의 각 페이지를 200dpi PNG로 한 번 렌더링해 저장하고 {page_no: path}를 돌려준다."""
+    out_dir = pages_dir(document_id)
+    paths: dict[int, str] = {}
+    with fitz.open(pdf_path) as doc:
+        for i, page in enumerate(doc, start=1):
+            path = out_dir / f"{i}.png"
+            page.get_pixmap(dpi=PAGE_IMAGE_DPI).save(str(path))
+            paths[i] = str(path)
+    return paths
+
+
+def _without(d: dict, key: str) -> dict:
+    return {k: v for k, v in d.items() if k != key}
+
+
+def _fail(db, document: Document | None, regulation: Regulation | None, job: Job, step: str, reason: str) -> None:
+    if document:
+        document.status = "FAILED"
+        document.failure_step = step
+        document.failure_reason = reason
+    if regulation:
+        regulation.status = "FAILED"
+        regulation.error = f"{step}: {reason}"
+    job.status = "FAILED"
+    job.current_step = step
+    job.error = reason
+    job.finished_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _fail_unavailable(document_id: uuid.UUID, job_id: uuid.UUID, exc: Exception) -> None:
+    """OCR/LLM 서버 장애(503 계열)는 문서를 처리중에 멈춰두지 않고 FAILED + jobs.error로 남긴다(reprocess로 재시작)."""
+    db = SessionLocal()
+    try:
+        document, job = db.get(Document, document_id), db.get(Job, job_id)
+        if document and job:
+            _fail(db, document, None, job, job.current_step or "unknown", str(exc))
+    finally:
+        db.close()
+
+
+def run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
+    try:
+        _run_document_pipeline(document_id, job_id)
+    except (ai.OcrUnavailableError, ai.LLMUnavailableError) as exc:
+        _fail_unavailable(document_id, job_id, exc)
+
+
+def _run_document_pipeline(document_id: uuid.UUID, job_id: uuid.UUID) -> None:
+    db = SessionLocal()
+    try:
+        document = db.get(Document, document_id)
+        job = db.get(Job, job_id)
+        if not document or not job:
+            return
+
+        job.status, job.started_at, job.attempts = "RUNNING", datetime.now(timezone.utc), job.attempts + 1
+        db.commit()
+
+        try:
+            document.status, job.current_step, job.progress = "NORMALIZING", "normalize", 10
+            db.commit()
+            norm_path = str(normalized_dir() / f"{document.id}.pdf")
+            normalized = ai.normalize_to_pdf(document.original_path, document.original_format, norm_path)
+        except (ai.UnsupportedFormatError, ValueError) as exc:
+            # ValueError: 손상 파일·HWP 3.0 등 파싱 실패 + LibreOffice 변환 불가도 실패로 분류
+            _fail(db, document, None, job, "normalize", str(exc))
+            return
+
+        document.normalized_pdf_path = normalized["normalized_pdf_path"]
+        document.page_count = len(normalized["pages"])
+        document.source_type = normalized["source_type"]  # 페이지별 라우터 판정(native/scan/mixed)
+        images = _render_page_images(document.normalized_pdf_path, document.id)
+        for p in normalized["pages"]:
+            db.add(Page(document_id=document.id, image_path=images.get(p["page_no"]), **p))
+        db.commit()
+
+        document.status, job.current_step, job.progress = "OCR", "ocr", 35
+        db.commit()
+        ocr_lines = ai.run_ocr(document.normalized_pdf_path)
+        for line in ocr_lines:
+            db.add(OcrLine(document_id=document.id, **line))
+        db.commit()
+
+        document.status, job.current_step, job.progress = "EXTRACTING", "extract", 60
+        db.commit()
+        fields, meta = ai.extract_contract_fields_with_meta(ocr_lines, DbLlmCache())
+        extraction = Extraction(document_id=document.id, status="AUTO", **meta)
+        db.add(extraction)
+        db.flush()
+        for f in fields:
+            highlights = f["highlights"]
+            field_row = ExtractionField(extraction_id=extraction.id, label=_FIELD_LABELS[f["field_code"]], color_key=f["field_code"], **_without(f, "highlights"))
+            db.add(field_row)
+            db.flush()
+            for h in highlights:
+                db.add(Highlight(document_id=document.id, extraction_field_id=field_row.id, origin="auto", **h))
+        db.commit()
+
+        document.status, job.current_step, job.progress = "RISK", "risk", 85
+        db.commit()
+        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db), policy_search=lambda q: search(db, q, None, 3), llm_cache=DbLlmCache())
+        for r in risks:
+            highlights = r.pop("highlights")
+            risk_row = RiskFinding(document_id=document.id, status="OPEN", **r)
+            db.add(risk_row)
+            db.flush()
+            for h in highlights:
+                db.add(Highlight(document_id=document.id, risk_finding_id=risk_row.id, origin="auto", **h))
+        db.commit()
+
+        document.status = "DONE"
+        job.status, job.current_step, job.progress = "DONE", None, 100
+        job.finished_at = datetime.now(timezone.utc)
+        db.commit()
+    finally:
+        db.close()
+
+
+def run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) -> None:
+    """from_step(ocr|extract|risk)부터 이미 저장된 ocr_lines/fields를 재사용해 이후 단계만 다시 실행한다."""
+    try:
+        _run_reprocess(document_id, job_id, from_step)
+    except (ai.OcrUnavailableError, ai.LLMUnavailableError) as exc:
+        _fail_unavailable(document_id, job_id, exc)
+
+
+def _run_reprocess(document_id: uuid.UUID, job_id: uuid.UUID, from_step: str) -> None:
+    db = SessionLocal()
+    try:
+        document = db.get(Document, document_id)
+        job = db.get(Job, job_id)
+        if not document or not job:
+            return
+        job.status, job.started_at, job.attempts = "RUNNING", datetime.now(timezone.utc), job.attempts + 1
+        db.commit()
+
+        if from_step == "ocr":
+            document.status, job.current_step, job.progress = "OCR", "ocr", 35
+            db.commit()
+            db.query(OcrLine).filter(OcrLine.document_id == document.id).delete()
+            ocr_lines = ai.run_ocr(document.normalized_pdf_path)
+            for line in ocr_lines:
+                db.add(OcrLine(document_id=document.id, **line))
+            db.commit()
+        else:
+            ocr_lines = [
+                {"page_no": l.page_no, "line_id": l.line_id, "text": l.text, "bbox": l.bbox, "confidence": l.confidence, "source": l.source, "table_cell": l.table_cell}
+                for l in db.query(OcrLine).filter(OcrLine.document_id == document.id).all()
+            ]
+
+        fields: list[ai.ExtractionFieldDict]
+        if from_step in ("ocr", "extract"):
+            document.status, job.current_step, job.progress = "EXTRACTING", "extract", 60
+            db.commit()
+            extraction = db.query(Extraction).filter(Extraction.document_id == document.id).one()
+            db.query(ExtractionField).filter(ExtractionField.extraction_id == extraction.id).delete()
+            extraction.status = "AUTO"
+            fields, meta = ai.extract_contract_fields_with_meta(ocr_lines, DbLlmCache())
+            extraction.model_name, extraction.prompt_version, extraction.raw_llm_output = meta["model_name"], meta["prompt_version"], meta["raw_llm_output"]
+            for f in fields:
+                highlights = f["highlights"]
+                field_row = ExtractionField(extraction_id=extraction.id, label=_FIELD_LABELS[f["field_code"]], color_key=f["field_code"], **_without(f, "highlights"))
+                db.add(field_row)
+                db.flush()
+                for h in highlights:
+                    db.add(Highlight(document_id=document.id, extraction_field_id=field_row.id, origin="auto", **h))
+            db.commit()
+        else:
+            extraction = db.query(Extraction).filter(Extraction.document_id == document.id).one()
+            fields = [
+                {
+                    "field_code": f.field_code, "raw_value": f.raw_value, "normalized_value": f.normalized_value, "confidence": f.confidence, "mapping_method": f.mapping_method,
+                    "highlights": [{"page_no": h.page_no, "bbox": h.bbox, "ocr_line_id": h.ocr_line_id} for h in f.highlights],
+                }
+                for f in extraction.fields
+            ]
+
+        document.status, job.current_step, job.progress = "RISK", "risk", 85
+        db.commit()
+        db.query(RiskFinding).filter(RiskFinding.document_id == document.id).delete()
+        risks = ai.detect_risks(ocr_lines, fields, _active_risk_rules(db), policy_search=lambda q: search(db, q, None, 3), llm_cache=DbLlmCache())
+        for r in risks:
+            highlights = r.pop("highlights")
+            risk_row = RiskFinding(document_id=document.id, status="OPEN", **r)
+            db.add(risk_row)
+            db.flush()
+            for h in highlights:
+                db.add(Highlight(document_id=document.id, risk_finding_id=risk_row.id, origin="auto", **h))
+        db.commit()
+
+        document.status = "DONE"
+        job.status, job.current_step, job.progress = "DONE", None, 100
+        job.finished_at = datetime.now(timezone.utc)
+        db.commit()
+    finally:
+        db.close()
+
+
+def run_regulation_pipeline(regulation_id: uuid.UUID, job_id: uuid.UUID) -> None:
+    db = SessionLocal()
+    try:
+        regulation = db.get(Regulation, regulation_id)
+        job = db.get(Job, job_id)
+        if not regulation or not job:
+            return
+        job.status, job.started_at, job.attempts = "RUNNING", datetime.now(timezone.utc), job.attempts + 1
+        db.commit()
+
+        regulation.status, job.current_step, job.progress = "PARSING", "parse", 20
+        db.commit()
+        try:
+            nodes = ai.parse_regulation_structure(regulation.source_pdf_path)
+        except Exception as exc:  # noqa: BLE001 - PDF가 아니거나 손상된 경우까지 폭넓게 포착해 FAILED로 기록
+            _fail(db, None, regulation, job, "parse", str(exc))
+            return
+
+        def _save(node_list: list[ai.RegulationNodeDict], parent_id: uuid.UUID | None, order_start: int) -> int:
+            order = order_start
+            for n in node_list:
+                children = n.pop("children")
+                row = RegulationNode(regulation_id=regulation.id, parent_id=parent_id, sort_order=order, **n)
+                db.add(row)
+                db.flush()
+                order += 1
+                _save(children, row.id, 0)
+            return order
+
+        _save(nodes, None, 0)
+        db.commit()
+
+        job.current_step, job.progress = "chunk", 60
+        db.commit()
+        all_nodes = db.query(RegulationNode).filter(RegulationNode.regulation_id == regulation.id).all()
+        node_by_path = {n.path: n for n in all_nodes}
+        chunks = ai.chunk_regulation(_rebuild_node_tree(all_nodes))
+        embeddings = ai.index_chunks(chunks)
+        for c, embedding in zip(chunks, embeddings, strict=True):
+            node = node_by_path.get(c["node_path"])
+            db.add(RegulationChunk(regulation_id=regulation.id, node_id=node.id if node else None, content=c["content"], embedding=embedding))
+        db.commit()
+
+        regulation.status = "INDEXED"
+        regulation.chunk_count = len(chunks)
+        job.status, job.current_step, job.progress = "DONE", None, 100
+        job.finished_at = datetime.now(timezone.utc)
+        db.commit()
+    finally:
+        db.close()

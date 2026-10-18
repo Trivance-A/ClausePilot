@@ -1,0 +1,88 @@
+{
+  "doc_id": "kr_local_07",
+  "source_type": "native",
+  "source": "data/samples/law/kr_local_07.pdf",
+  "labels": {
+    "contract_name": {
+      "value": "누리천 제방 보강 공사",
+      "page": 1,
+      "bbox": [
+        0.39757,
+        0.28181,
+        0.55377,
+        0.29657
+      ],
+      "raw_text": "누리천 제방 보강 공사"
+    },
+    "contract_amount": {
+      "value": 273000000,
+      "page": 1,
+      "bbox": [
+        0.39757,
+        0.30283,
+        0.67397,
+        0.31759
+      ],
+      "raw_text": "금 이억칠천삼백만원정(￦273,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 27300000,
+      "page": 1,
+      "bbox": [
+        0.39757,
+        0.34473,
+        0.66518,
+        0.3595
+      ],
+      "raw_text": "금 이천칠백삼십만원정(￦27,300,000)"
+    },
+    "contract_date": {
+      "value": "2026-06-16",
+      "page": 1,
+      "bbox": [
+        0.63701,
+        0.76442,
+        0.7197,
+        0.77918
+      ],
+      "raw_text": "2026. 6. 16."
+    },
+    "performance_due_date": {
+      "value": "2027-02-13",
+      "page": 1,
+      "bbox": [
+        0.39757,
+        0.44964,
+        0.48026,
+        0.4644
+      ],
+      "raw_text": "2027. 2. 13."
+    },
+    "guarantee_period": {
+      "value": {
+        "start": "2027-02-14",
+        "end": "2029-02-12"
+      },
+      "page": 1,
+      "bbox": [
+        0.71384,
+        0.53434,
+        0.86967,
+        0.54755
+      ],
+      "raw_text": "2027. 2. 14.~2029. 2. 12."
+    },
+    "creditor_name": {
+      "value": "미르구청장",
+      "page": 1,
+      "bbox": [
+        0.39757,
+        0.17142,
+        0.4774,
+        0.18618
+      ],
+      "raw_text": "미르구청장"
+    },
+    "creditor_biz_no": null
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "doc_id": "kr_national_12_scan",
+  "source_type": "scan",
+  "source": "data/samples/law/kr_national_12.pdf",
+  "labels": {
+    "contract_name": {
+      "value": "새솔군 정수장 노후관 교체 공사",
+      "page": 1,
+      "bbox": [
+        0.31156,
+        0.24241,
+        0.53625,
+        0.26114
+      ],
+      "raw_text": "새솔군 정수장 노후관 교체 공사"
+    },
+    "contract_amount": {
+      "value": 889000000,
+      "page": 1,
+      "bbox": [
+        0.30889,
+        0.31793,
+        0.58572,
+        0.33758
+      ],
+      "raw_text": "금 팔억팔천구백만원정(￦889,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 26670000,
+      "page": 1,
+      "bbox": [
+        0.40959,
+        0.4332,
+        0.54037,
+        0.45027
+      ],
+      "raw_text": "금 26,670,000원정"
+    },
+    "contract_date": null,
+    "performance_due_date": {
+      "value": "2027-05-20",
+      "page": 1,
+      "bbox": [
+        0.68272,
+        0.28677,
+        0.7659,
+        0.30298
+      ],
+      "raw_text": "2027. 5. 20."
+    },
+    "guarantee_period": {
+      "value": {
+        "start": "2027-05-21",
+        "end": "2029-05-19"
+      },
+      "page": 1,
+      "bbox": [
+        0.69077,
+        0.43818,
+        0.8654,
+        0.45602
+      ],
+      "raw_text": "2027. 5. 21.~2029. 5. 19."
+    },
+    "creditor_name": {
+      "value": "새솔군 상하수도사업소장",
+      "page": 1,
+      "bbox": [
+        0.07636,
+        0.74804,
+        0.25663,
+        0.76599
+      ],
+      "raw_text": "새솔군 상하수도사업소장"
+    },
+    "creditor_biz_no": null
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "doc_id": "kr_local_08",
+  "source_type": "native",
+  "source": "data/samples/law/kr_local_08.pdf",
+  "labels": {
+    "contract_name": {
+      "value": "소방용 방화복 제조·구매",
+      "page": 1,
+      "bbox": [
+        0.37177,
+        0.2704,
+        0.54406,
+        0.28517
+      ],
+      "raw_text": "소방용 방화복 제조·구매"
+    },
+    "contract_amount": {
+      "value": 888000000,
+      "page": 1,
+      "bbox": [
+        0.37177,
+        0.29143,
+        0.64816,
+        0.30619
+      ],
+      "raw_text": "금 팔억팔천팔백만원정(￦888,000,000)"
+    },
+    "guarantee_amount": {
+      "value": 88800000,
+      "page": 1,
+      "bbox": [
+        0.37177,
+        0.33333,
+        0.63938,
+        0.3481
+      ],
+      "raw_text": "금 팔천팔백팔십만원정(￦88,800,000)"
+    },
+    "contract_date": {
+      "value": "2026-04-16",
+      "page": 1,
+      "bbox": [
+        0.65717,
+        0.64099,
+        0.73986,
+        0.65575
+      ],
+      "raw_text": "2026. 4. 16."
+    },
+    "performance_due_date": {
+      "value": "2027-04-17",
+      "page": 1,
+      "bbox": [
+        0.47158,
+        0.39626,
+        0.55427,
+        0.41102
+      ],
+      "raw_text": "2027. 4. 17."
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "가람시 시설관리공단 이사장",
+      "page": 1,
+      "bbox": [
+        0.37177,
+        0.18282,
+        0.5717,
+        0.19758
+      ],
+      "raw_text": "가람시 시설관리공단 이사장"
+    },
+    "creditor_biz_no": null
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "doc_id": "ftc_machinery",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_machinery.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "청사 업무용 노트북 구매",
+      "page": 1,
+      "bbox": [
+        0.48739,
+        0.28741,
+        0.70588,
+        0.30166
+      ],
+      "raw_text": "청사 업무용 노트북 구매"
+    },
+    "contract_amount": {
+      "value": 32250000,
+      "page": 1,
+      "bbox": [
+        0.23529,
+        0.32542,
+        0.68908,
+        0.33967
+      ],
+      "raw_text": "일금 삼천이백이십오만원정 (￦32,250,000)"
+    },
+    "guarantee_amount": null,
+    "contract_date": {
+      "value": "2026-03-18",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.40143,
+        0.28571,
+        0.41568
+      ],
+      "raw_text": "2026년 3월 18일"
+    },
+    "performance_due_date": {
+      "value": "2026-09-11",
+      "page": 1,
+      "bbox": [
+        0.58824,
+        0.30641,
+        0.78992,
+        0.32067
+      ],
+      "raw_text": "2026년 9월 11일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "(주)서해엔지니어링",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.43943,
+        0.43697,
+        0.45368
+      ],
+      "raw_text": "(주)서해엔지니어링"
+    },
+    "creditor_biz_no": {
+      "value": "840-52-75761",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.45843,
+        0.47059,
+        0.47268
+      ],
+      "raw_text": "840-52-75761"
+    }
+  }
+}

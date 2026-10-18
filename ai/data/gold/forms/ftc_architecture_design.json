@@ -1,0 +1,65 @@
+{
+  "doc_id": "ftc_architecture_design",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_architecture_design.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "교통량 조사 및 분석 용역",
+      "page": 1,
+      "bbox": [
+        0.26891,
+        0.32542,
+        0.5042,
+        0.33967
+      ],
+      "raw_text": "교통량 조사 및 분석 용역"
+    },
+    "contract_amount": {
+      "value": 288250000,
+      "page": 1,
+      "bbox": [
+        0.2521,
+        0.68646,
+        0.7563,
+        0.70071
+      ],
+      "raw_text": "일금 이억팔천팔백이십오만원정 (￦288,250,000)"
+    },
+    "guarantee_amount": {
+      "value": 28825000,
+      "page": 2,
+      "bbox": [
+        0.42017,
+        0.32542,
+        0.60504,
+        0.33967
+      ],
+      "raw_text": "28,825,000원"
+    },
+    "contract_date": {
+      "value": "2026-09-15",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.87648,
+        0.28571,
+        0.89074
+      ],
+      "raw_text": "2026년 9월 15일"
+    },
+    "performance_due_date": null,
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "가온산업(주)",
+      "page": 2,
+      "bbox": [
+        0.36975,
+        0.89549,
+        0.48739,
+        0.90974
+      ],
+      "raw_text": "가온산업(주)"
+    },
+    "creditor_biz_no": null
+  }
+}

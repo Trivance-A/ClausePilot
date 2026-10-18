@@ -1,0 +1,75 @@
+{
+  "doc_id": "ftc_chemical",
+  "source_type": "native",
+  "source": "data/samples/ftc/ftc_chemical.hwp",
+  "labels": {
+    "contract_name": {
+      "value": "청사 업무용 노트북 구매",
+      "page": 1,
+      "bbox": [
+        0.48739,
+        0.28741,
+        0.70588,
+        0.30166
+      ],
+      "raw_text": "청사 업무용 노트북 구매"
+    },
+    "contract_amount": {
+      "value": 285000000,
+      "page": 1,
+      "bbox": [
+        0.23529,
+        0.32542,
+        0.68908,
+        0.33967
+      ],
+      "raw_text": "일금 이억팔천오백만원정 (￦285,000,000)"
+    },
+    "guarantee_amount": null,
+    "contract_date": {
+      "value": "2026-06-17",
+      "page": 2,
+      "bbox": [
+        0.08403,
+        0.34442,
+        0.28571,
+        0.35867
+      ],
+      "raw_text": "2026년 6월 17일"
+    },
+    "performance_due_date": {
+      "value": "2027-03-07",
+      "page": 1,
+      "bbox": [
+        0.58824,
+        0.30641,
+        0.77311,
+        0.32067
+      ],
+      "raw_text": "2027년 3월 7일"
+    },
+    "guarantee_period": null,
+    "creditor_name": {
+      "value": "가온산업(주)",
+      "page": 2,
+      "bbox": [
+        0.26891,
+        0.38242,
+        0.38655,
+        0.39667
+      ],
+      "raw_text": "가온산업(주)"
+    },
+    "creditor_biz_no": {
+      "value": "616-38-40270",
+      "page": 2,
+      "bbox": [
+        0.21849,
+        0.40143,
+        0.42017,
+        0.41568
+      ],
+      "raw_text": "616-38-40270"
+    }
+  }
+}
