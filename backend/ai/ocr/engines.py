@@ -50,6 +50,72 @@ def spaced_text(words: list[str], boxes: list) -> str:
     return out
 
 
+def _char_width(ch: str) -> float:
+    """Relative advance width: Hangul/CJK 1, Latin/digits ~0.55, punctuation ~0.35."""
+    if "가" <= ch <= "힣" or "\u4e00" <= ch <= "\u9fff":
+        return 1.0
+    if ch.isalnum():
+        return 0.55
+    return 0.35
+
+
+_HANGUL_RE = re.compile(r"[가-힣]")
+GAP_MIN_PITCH = 0.3  # tuned on 20 gold scan contract names: 17/20 exact
+GAP_TYPICAL_MUL = 1.3
+
+
+def gap_spaced_text(gray: np.ndarray, box, text: str) -> str:
+    """Put back the spaces PP-OCR's korean recognizer drops ("누리천제방보강공사"), from the line image itself:
+    blank column runs clearly wider than the normal gap between syllables are word spaces. Each wide gap is
+    placed at the character boundary nearest to it (characters laid out by relative advance width).
+    Returns `text` unchanged when it already has spaces, is short, or the crop shows no clear gaps."""
+    if " " in text.strip() or len(text) < 4:
+        return text
+    h, w = gray.shape[:2]
+    x0, y0, x1, y1 = (int(round(v)) for v in box)
+    x0, y0, x1, y1 = max(0, x0), max(0, y0), min(w, x1), min(h, y1)
+    if x1 - x0 < 8 or y1 - y0 < 4:
+        return text
+    crop = gray[y0:y1, x0:x1]
+    bw = cv2.threshold(crop, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+    prof = (bw > 0).sum(axis=0)
+    ink = np.where(prof > max(1, 0.03 * crop.shape[0]))[0]
+    if len(ink) < 2:
+        return text
+    a, b = int(ink[0]), int(ink[-1])
+    runs, start = [], None  # blank column runs inside the ink span
+    for x in range(a, b + 1):
+        blank = prof[x] <= max(1, 0.03 * crop.shape[0])
+        if blank and start is None:
+            start = x
+        elif not blank and start is not None:
+            runs.append((start, x - start))
+            start = None
+    if not runs:
+        return text
+    units = [_char_width(c) for c in text]
+    total_units = sum(units)
+    pitch = (b - a + 1) / total_units
+    gaps = sorted(width for _, width in runs)
+    typical = gaps[len(gaps) // 2]
+    wide = [(s, width) for s, width in runs if width > max(GAP_MIN_PITCH * pitch, GAP_TYPICAL_MUL * typical)]
+    if not wide:
+        return text
+    pitch = (b - a + 1 - sum(width for _, width in wide)) / total_units  # advance without the spaces
+    bounds, acc = [], 0.0  # x of each character boundary (after char i), spaces removed
+    for u in units[:-1]:
+        acc += u * pitch
+        bounds.append(acc)
+    cut: set[int] = set()
+    shift = 0
+    for s, width in wide:
+        x = s - a - shift  # gap start in space-free coordinates
+        shift += width
+        i = min(range(len(bounds)), key=lambda k: abs(bounds[k] - x))
+        cut.add(i + 1)
+    return "".join((" " if i in cut else "") + c for i, c in enumerate(text))
+
+
 class OcrUnavailableError(RuntimeError):
     """No usable OCR engine / OCR server unreachable (API: 503 OCR_UNAVAILABLE)."""
 
@@ -129,12 +195,20 @@ class PaddleEngine:
         res = res if res is not None else self._ocr.predict(image)[0]
         words = res.get("text_word") if hasattr(res, "get") else None
         word_boxes = (res.get("text_word_boxes") or res.get("text_word_region")) if hasattr(res, "get") else None
+        gray = None
+        if os.getenv("PADDLE_GAP_SPACING", "1") == "1":
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
         out = []
         for i, (text, score, box) in enumerate(zip(res["rec_texts"], res["rec_scores"], res["rec_boxes"], strict=True)):
             if words and word_boxes and i < len(words) and i < len(word_boxes) and " " not in text.strip():
                 try:
                     text = spaced_text(list(words[i]), [_xyxy(b) for b in word_boxes[i]]) or text
                 except (TypeError, ValueError, IndexError):
+                    pass
+            if gray is not None and " " not in text.strip() and len(_HANGUL_RE.findall(text)) >= 5:
+                try:  # korean recognizer drops word spaces; recover them from blank columns in the line image
+                    text = gap_spaced_text(gray, (box[0] - 4, box[1] - 4, box[2] + 4, box[3] + 4), text)
+                except (ValueError, IndexError, cv2.error):
                     pass
             if text.strip():
                 out.append(OcrLine(text, (float(box[0]), float(box[1]), float(box[2]), float(box[3])), float(score)))

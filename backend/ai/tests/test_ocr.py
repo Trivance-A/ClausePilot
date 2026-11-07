@@ -158,3 +158,41 @@ def test_tesseract_reads_rendered_scan(tmp_path):
     lines = run_ocr(scan, engine="tesseract")
     assert lines and all(ln["source"] == "tesseract" for ln in lines)
     assert any("2026" in ln["text"] for ln in lines)
+
+
+def _glyph_strip(groups, glyph=20, gap=4, space=16, h=30):
+    """White strip with black blocks: `groups` = chars per word; normal gap between chars, wider gap between words."""
+    import numpy as np
+
+    widths = []
+    for gi, n in enumerate(groups):
+        for ci in range(n):
+            widths.append(("g", glyph))
+            if ci < n - 1:
+                widths.append(("b", gap))
+        if gi < len(groups) - 1:
+            widths.append(("b", space))
+    w = sum(x for _, x in widths) + 20
+    img = np.full((h, w), 255, np.uint8)
+    x = 10
+    for kind, width in widths:
+        if kind == "g":
+            img[5 : h - 5, x : x + width] = 0
+        x += width
+    return img, (0, 0, w, h)
+
+
+def test_gap_spaced_text_restores_word_spaces():
+    from ai.ocr.engines import gap_spaced_text
+
+    img, box = _glyph_strip([3, 2, 4])
+    assert gap_spaced_text(img, box, "누리천제방보강공사") == "누리천 제방 보강공사"
+
+
+def test_gap_spaced_text_leaves_evenly_spaced_and_spaced_text():
+    from ai.ocr.engines import gap_spaced_text
+
+    img, box = _glyph_strip([6])
+    assert gap_spaced_text(img, box, "계약보증금률") == "계약보증금률"
+    img, box = _glyph_strip([3, 3])
+    assert gap_spaced_text(img, box, "공사명 누리천") == "공사명 누리천"
