@@ -25,6 +25,9 @@ done
 MODEL=$(python3 -c 'import json;print(json.load(open("/tmp/models.json"))["data"][0]["id"])')
 echo "vLLM: $URL  model: $MODEL"
 
+# a "text PDF" form can still carry an image-only page -> some OCR engine must exist (Tesseract as the CPU fallback)
+command -v tesseract >/dev/null || sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-kor >/dev/null || true
+python3 -c "import paddleocr" 2>/dev/null || export OCR_ENGINE=tesseract
 GOLD=data/gold/forms
 if ! python3 -c "import paddleocr" 2>/dev/null; then
   GOLD=/tmp/gold-native && rm -rf $GOLD && mkdir -p $GOLD
