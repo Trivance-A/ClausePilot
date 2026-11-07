@@ -24,7 +24,7 @@ from ai.types import FIELD_CODES, FIELD_LABELS, ExtractionFieldDict, OcrLineDict
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "extract-v4"
+PROMPT_VERSION = "extract-v5"  # v5: table value lines carry their label "[표 r6,c3 · 공사명]"
 RETRY_PROMPT_VERSION = "extract-retry-v1"
 REQUERY_PROMPT_VERSION = "requery-v1"
 MAX_FULL_PAGES = 5
@@ -82,8 +82,17 @@ NOT_IN_DOCUMENT = 50  # below this best fuzzy score the value is a fabrication, 
 _METHOD_CONFIDENCE = {"llm_ref": 0.95, "exact": 0.9, "fuzzy": 0.75, "none": 0.3}
 
 
-def format_lines(lines: list[OcrLineDict]) -> str:
-    return "\n".join(f"{ln['line_id']}: " + (f"[표 {ln['table_cell']}] " if ln["table_cell"] else "") + ln["text"] for ln in lines)
+def format_lines(lines: list[OcrLineDict], hints: dict[str, str] | None = None) -> str:
+    """'L1-14: [표 r6,c3 · 공사명] 새솔군 ...': a table value line names its label cell (left / column header),
+    which the model otherwise sees several lines away and misreads on merged-cell forms."""
+    hints = hints or {}
+
+    def tag(ln: OcrLineDict) -> str:
+        if not ln["table_cell"]:
+            return ""
+        return f"[표 {ln['table_cell']} · {hints[ln['line_id']]}] " if ln["line_id"] in hints else f"[표 {ln['table_cell']}] "
+
+    return "\n".join(f"{ln['line_id']}: {tag(ln)}{ln['text']}" for ln in lines)
 
 
 def select_lines(lines: list[OcrLineDict]) -> list[OcrLineDict]:
@@ -210,7 +219,9 @@ def _confidence(method: str, score: float, normalized: dict | None) -> float:
 
 def extract_fields(lines: list[OcrLineDict], llm: LLMClient) -> tuple[list[ExtractionFieldDict], dict]:
     """Returns (8 fields in FIELD_CODES order, meta{model_name, prompt_version, raw_llm_output})."""
-    doc_text = format_lines(select_lines(lines))
+    from ai.extract.rules import rule_values, table_label_hints  # noqa: PLC0415 - rules imports helpers from here
+
+    doc_text = format_lines(select_lines(lines), table_label_hints(lines))
     output = llm.chat_json(SYSTEM, "[문서 라인 목록]\n" + doc_text, SCHEMA, prompt_version=PROMPT_VERSION, name="contract_fields")
 
     raw = {code: _raw((output.get(code) or {}).get("raw_value")) for code in FIELD_CODES}
@@ -230,6 +241,14 @@ def extract_fields(lines: list[OcrLineDict], llm: LLMClient) -> tuple[list[Extra
                 logger.warning("%s %s=%r after retry: %s", "kept" if keep else "dropped", c, raw[c], why)
                 raw[c], evidence[c] = keep or (None, None)
         normalized = normalize_fields(raw)  # guarantee_period depends on the date fields
+    # fields the model left empty: a value written right next to its label (table cell / "라벨 : 값") is taken as is
+    filled = {}
+    for code, rv in rule_values(lines).items():
+        if raw[code] is None and rv is not None and rv.kind != "signature":
+            raw[code], evidence[code] = rv.raw, [rv.line_id]
+            filled[code] = rv.raw
+    if filled:
+        logger.info("filled from labels: %s", filled)
     is_contract = _is_contract(lines)
     if not is_contract and raw["contract_date"] and not _has_contract_date_field(lines):
         logger.warning("dropped contract_date=%r: not a contract and no 계약일자 field", raw["contract_date"])
@@ -269,5 +288,6 @@ def extract_fields(lines: list[OcrLineDict], llm: LLMClient) -> tuple[list[Extra
                 "highlights": highlights,
             }
         )
-    meta = {"model_name": llm.model, "prompt_version": PROMPT_VERSION, "raw_llm_output": output if retry_out is None else {**output, "_retry": retry_out}}
+    llm_out = output if retry_out is None else {**output, "_retry": retry_out}
+    meta = {"model_name": llm.model, "prompt_version": PROMPT_VERSION, "raw_llm_output": {**llm_out, "_label_fill": filled} if filled else llm_out}
     return fields, meta

@@ -22,7 +22,7 @@ def test_extraction_meta_and_page_images_are_stored(client, admin_headers):
     doc_id = upload_and_wait_document(client, admin_headers)
     with SessionLocal() as db:
         extraction = db.query(Extraction).filter(Extraction.document_id == uuid.UUID(doc_id)).one()
-        assert (extraction.model_name, extraction.prompt_version, extraction.raw_llm_output) == ("rule-based-v1", "rule-based-v1", None)
+        assert (extraction.model_name, extraction.prompt_version, extraction.raw_llm_output) == ("rule-based-v2", "rule-based-v2", None)
         page = db.query(Page).filter(Page.document_id == uuid.UUID(doc_id), Page.page_no == 1).one()
 
     assert page.image_path and page.image_path.endswith(f"{doc_id}/1.png")

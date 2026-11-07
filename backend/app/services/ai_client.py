@@ -194,7 +194,7 @@ def _apply_fallbacks(ocr_lines: list[OcrLineDict], results: list[ExtractionField
                 break
 
 
-RULE_BASED_VERSION = "rule-based-v1"
+RULE_BASED_VERSION = "rule-based-v2"
 LLMCache = MutableMapping[str, Any]
 
 
@@ -228,6 +228,14 @@ def extract_contract_fields(ocr_lines: list[OcrLineDict]) -> list[ExtractionFiel
 
 
 def _extract_rule_based(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:
+    """GPU·API 없는 환경의 추출: 라벨–값 짝(표 셀·'라벨 : 값'·다음 줄·서명란 역할)으로 찾는다 (ai/extract/rules.py)."""
+    from ai.extract.rules import extract_rule_based  # noqa: PLC0415
+
+    return extract_rule_based(ocr_lines)
+
+
+def _extract_rule_based_v1(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:
+    """이전 키워드 줄 방식 (rule-based-v1). 비교용으로 남겨 둠."""
     results: list[ExtractionFieldDict] = []
     for code in FIELD_CODES:
         candidates = _find_lines(ocr_lines, FIELD_KEYWORDS[code])

@@ -83,7 +83,7 @@ def test_extract_fields_end_to_end(lines):
     }
     assert all(h["ocr_line_id"] and len(h["bbox"]) == 4 for x in fields for h in x["highlights"])
     assert by["contract_name"]["confidence"] > by["guarantee_amount"]["confidence"] > 0
-    assert meta == {"model_name": "fake-7b", "prompt_version": "extract-v4", "raw_llm_output": llm.extract}
+    assert meta == {"model_name": "fake-7b", "prompt_version": "extract-v5", "raw_llm_output": llm.extract}
     assert "L1-1: 공 사 도 급 계 약 서" in llm.calls[0][2]
 
 
@@ -115,7 +115,9 @@ def test_wrong_shaped_values_are_asked_again_once(lines):
     by = {x["field_code"]: x for x in fields}
     assert by["contract_date"]["normalized_value"] == {"date": "2026-03-05"}
     assert by["creditor_name"]["normalized_value"] == {"text": "(주)한빛도시공사"}
-    assert by["contract_name"]["raw_value"] is None  # still a form title after the retry -> null, not a guess
+    # still a form title after the retry -> the model's answer is dropped; the value written next to "공사명 :" is used
+    assert by["contract_name"]["raw_value"] == "한빛시 도로 확장공사"
+    assert meta["raw_llm_output"]["_label_fill"]["contract_name"] == "한빛시 도로 확장공사"
     assert by["contract_amount"]["normalized_value"] == {"amount": 350_000_000}  # valid first answers are not re-asked
     retries = [p for v, _, p in llm.calls if v.startswith("extract-retry")]
     assert len(retries) == 1 and "contract_date" in retries[0] and "contract_amount" not in retries[0].split("[다시 찾을 항목]")[1]

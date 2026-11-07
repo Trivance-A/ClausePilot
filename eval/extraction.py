@@ -104,9 +104,9 @@ def check_bbox(label: dict, pred: dict | None) -> tuple[bool, float]:
 
 
 def rule_extractor(lines: list) -> list[dict]:
-    from app.services.ai_client import _extract_rule_based  # backend app module: imported only when used
+    from ai.extract.rules import extract_rule_based
 
-    return _extract_rule_based(lines)
+    return extract_rule_based(lines)
 
 
 def llm_extractor(llm) -> Extractor:
@@ -250,7 +250,7 @@ def main(argv: list[str] | None = None) -> None:
         llm = LLMClient(args.llm_url, args.llm_model)
         extractor, model = llm_extractor(llm), args.llm_model
     else:
-        extractor, model = rule_extractor, "rule-based-v1"
+        extractor, model = rule_extractor, "rule-based-v2"
     metrics, failures = evaluate(args.gold, extractor, args.ocr_engine, args.limit)
     metrics["meta"] = {
         "gold": str(args.gold),
