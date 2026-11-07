@@ -208,3 +208,30 @@ def test_vllm_schema_uses_anyof_for_nullable_types():
     field = out["$defs"]["field"]["properties"]["raw_value"]
     assert field == {"anyOf": [{"type": "string"}, {"type": "null"}]}
     assert SCHEMA["$defs"]["field"]["properties"]["raw_value"] == {"type": ["string", "null"]}  # shared schema untouched
+
+
+def test_fabricated_placeholder_falls_back_to_the_labelled_value():
+    lines = table_form()
+    extract = {code: {"raw_value": None, "evidence_line_ids": [], "confidence": 1} for code in rule_values(lines)}
+    extract["creditor_name"] = {"raw_value": "OOO", "evidence_line_ids": [], "confidence": 1}
+    fields, meta = extract_fields(lines, FakeLLM(extract=extract))
+    by = {f["field_code"]: f for f in fields}
+    assert by["creditor_name"]["raw_value"] == "누리도 건설본부장"
+    assert by["creditor_name"]["highlights"][0]["ocr_line_id"] == "L1-3"
+
+
+def test_official_title_is_not_a_creditor():
+    from ai.extract import wrong_shape
+
+    assert wrong_shape("creditor_name", "세입세출외현금출납원", {"text": "세입세출외현금출납원"})
+    assert wrong_shape("creditor_name", "(유가증권취급공무원)", {"text": "(유가증권취급공무원)"})
+    assert wrong_shape("creditor_name", "누리도 건설본부장", {"text": "누리도건설본부장"}) is None
+
+
+def test_highlight_uses_the_labelled_occurrence():
+    lines = [ln(0, "누리도 건설본부장 귀하 제출용 표지")] + table_form()
+    extract = {code: {"raw_value": None, "evidence_line_ids": [], "confidence": 1} for code in rule_values(lines)}
+    extract["creditor_name"] = {"raw_value": "누리도 건설본부장", "evidence_line_ids": ["L1-1"], "confidence": 1}  # cites the title line
+    fields, _ = extract_fields(lines, FakeLLM(extract=extract))
+    by = {f["field_code"]: f for f in fields}
+    assert by["creditor_name"]["highlights"][0]["ocr_line_id"] == "L1-3"

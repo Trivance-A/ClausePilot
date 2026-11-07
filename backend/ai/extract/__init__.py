@@ -19,7 +19,7 @@ from typing import Any
 
 from ai.extract.normalize import _DATE_RES, _END_WORDS, _START_WORDS, normalize_fields, parse_dates
 from ai.llm import LLMClient, LLMUnavailableError
-from ai.mapping import map_value
+from ai.mapping import clean_line_ids, locate, map_value
 from ai.types import FIELD_CODES, FIELD_LABELS, ExtractionFieldDict, OcrLineDict
 
 logger = logging.getLogger(__name__)
@@ -134,7 +134,8 @@ def wrong_shape(code: str, raw: str | None, normalized: dict | None) -> str | No
         relative = any(w in compact for w in _START_WORDS + _END_WORDS) or re.search(r"\d", compact)
         return None if normalized or relative else "날짜·기간 표현이 없음"
     if code == "creditor_name":
-        if re.sub(r"\(.*?\)", "", compact) in ROLE_WORDS:
+        bare = re.sub(r"\(.*?\)", "", compact)
+        if bare in ROLE_WORDS or compact.strip("()").endswith(("공무원", "출납원")):  # "세입세출외현금출납원": an official's title, not the creditor
             return "회사·기관 이름이 아니라 역할 이름"
         return "이름이 아니라 문장" if len(compact) > 40 else None
     if code == "contract_name" and (len(compact) > 50 or "【" in compact or "이하" in compact or compact.endswith("계약서")):
@@ -217,6 +218,11 @@ def _confidence(method: str, score: float, normalized: dict | None) -> float:
     return round(conf, 3)
 
 
+def _same_value(code: str, a: str, b: str) -> bool:
+    na, nb = normalize_fields({code: a}).get(code), normalize_fields({code: b}).get(code)
+    return bool(na) and na == nb
+
+
 def extract_fields(lines: list[OcrLineDict], llm: LLMClient) -> tuple[list[ExtractionFieldDict], dict]:
     """Returns (8 fields in FIELD_CODES order, meta{model_name, prompt_version, raw_llm_output})."""
     from ai.extract.rules import rule_values, table_label_hints  # noqa: PLC0415 - rules imports helpers from here
@@ -243,7 +249,8 @@ def extract_fields(lines: list[OcrLineDict], llm: LLMClient) -> tuple[list[Extra
         normalized = normalize_fields(raw)  # guarantee_period depends on the date fields
     # fields the model left empty: a value written right next to its label (table cell / "라벨 : 값") is taken as is
     filled = {}
-    for code, rv in rule_values(lines).items():
+    labelled = rule_values(lines)
+    for code, rv in labelled.items():
         if raw[code] is None and rv is not None and rv.kind != "signature":
             raw[code], evidence[code] = rv.raw, [rv.line_id]
             filled[code] = rv.raw
@@ -273,11 +280,26 @@ def extract_fields(lines: list[OcrLineDict], llm: LLMClient) -> tuple[list[Extra
             out = llm.chat_json(SYSTEM, prompt, REQUERY_SCHEMA, prompt_version=REQUERY_PROMPT_VERSION, name="evidence")
             return out.get("evidence_line_ids") or []
 
+        rv = labelled.get(code)
+        by_id = {ln["line_id"]: ln for ln in lines}
+        llm_lines = [by_id[i] for i in clean_line_ids(evidence[code], by_id)]
+        # the model cited a line without the value (a title, a later clause): use the labelled occurrence instead
+        from_label = bool(value and rv and _same_value(code, value, rv.raw) and not (llm_lines and locate(value, llm_lines)))
+        if from_label:
+            evidence[code] = [rv.line_id]  # the labelled occurrence, not the same name in a title or a later clause
         method, highlights, score = map_value(value, lines, evidence[code], requery if value else None, code)
+        if from_label and method == "llm_ref":
+            method = "exact"  # found by the label, not by the model's evidence IDs
         if value and method == "none" and score < NOT_IN_DOCUMENT:
             # nothing in the document even resembles it -> the model invented it (raw kept in raw_llm_output)
             logger.warning("dropped %s=%r: not found in document (best fuzzy %.0f)", code, value, score)
             value, normalized[code] = None, None
+            if rv and rv.kind != "signature":  # "OOO" placeholder answered -> the value written next to its label
+                value = with_title(rv.raw, lines) if code == "creditor_name" else rv.raw
+                normalized[code] = normalize_fields({**raw, code: value})[code]
+                method, highlights, score = map_value(value, lines, [rv.line_id], None, code)
+                method = "exact" if method == "llm_ref" else method
+                filled[code] = value
         fields.append(
             {
                 "field_code": code,

@@ -90,15 +90,10 @@ def test_extract_fields_end_to_end(lines):
 def test_value_not_in_document_is_dropped_as_fabricated(lines):
     llm = FakeLLM(extract={"contract_name": f("존재하지 않는 공사명 ABC")}, requery={"evidence_line_ids": ["L1-2"]})
     fields, meta = extract_fields(lines, llm)
-    assert fields[0] == {
-        "field_code": "contract_name",
-        "raw_value": None,
-        "normalized_value": None,
-        "confidence": 0.0,
-        "mapping_method": "none",
-        "highlights": [],
-    }
+    # the invented name is dropped; the value written next to "공사명 :" takes its place (found by label -> exact)
+    assert fields[0]["raw_value"] == "한빛시 도로 확장공사" and fields[0]["mapping_method"] == "exact"
     assert meta["raw_llm_output"]["contract_name"]["raw_value"] == "존재하지 않는 공사명 ABC"  # kept for audit only
+    assert meta["raw_llm_output"]["_label_fill"]["contract_name"] == "한빛시 도로 확장공사"
     assert any(v.startswith("requery") for v, _, _ in llm.calls)
 
 
