@@ -13,7 +13,23 @@
 | 계약건명 띄어쓰기 | PaddleOCR가 공백 누락 | 단어 박스 간격으로 공백 복원(`spaced_text`, `PADDLE_WORD_SPACING=1`). Kiwi 띄어쓰기는 정답 35개 중 5개만 일치해 채택하지 않음 |
 | OCR 서버 장애 | `OCR_BASE_URL` 서버가 죽으면 문서 실패 | 그 페이지는 CPU OCR로 처리, 60초 뒤 서버 재시도 (`OCR_FALLBACK=0`으로 끔) |
 
-## 측정 (LLM 없이, 규칙 추출기 기준)
+## 측정 1 — LLM 14B, 학교 GPU 서버 (같은 조건 전·후 비교)
+
+2026-11-07, AWS `202647011-aic-02` (g5.xlarge, A10G 24GB), vLLM 0.6.6 `Qwen/Qwen2.5-14B-Instruct-AWQ`, guided_json,
+공개 양식 텍스트 PDF 35건. 고도화 전 = `feat/ai`의 `ai/extract/__init__.py`(5efa9dd), 나머지 코드·문서·모델 동일.
+
+| 지표 | 고도화 전 | 고도화 후 | 향상 |
+| --- | --- | --- | --- |
+| 항목 정확도 | 93.6% | **97.5%** | +3.9%p |
+| 위치 매핑률 | 94.0% | **99.5%** | +5.5%p |
+| 위치 정확도(IoU≥0.5) | 85.4% | **90.0%** | +4.5%p |
+| 문서당 처리 시간 | 16.2초 | 16.2초 | 0 |
+
+항목별(전 → 후): 계약이행기일 71.4 → **100**, 채권자명 85.7 → 88.6, 나머지 6개 항목은 같음
+(계약건명 97.1, 사업자번호 94.3, 계약금액·보증금액·계약일자·보증기간 100).
+남은 실패: 채권자명 4건, 사업자번호 2건, 계약건명 1건.
+
+## 측정 2 — 규칙 추출기 (LLM 없이)
 
 `PYTHONPATH=backend:. python -m eval.extraction --gold <dir> --extractor rule --ocr-engine tesseract`
 스캔 OCR은 이 환경에 PaddleOCR 모델이 없어 Tesseract로 측정했다 (실서비스는 PaddleOCR).
