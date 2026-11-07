@@ -24,6 +24,19 @@ def env_model() -> str:
     return os.getenv("LLM_MODEL", DEFAULT_MODEL)
 
 
+def vllm_schema(schema):
+    """vLLM 0.6.6 guided_json rejects {"type": ["string", "null"]} (HTTP 400); the same meaning as anyOf is accepted.
+    Converted only for vLLM: the shared schema keeps the list form other servers read."""
+    if isinstance(schema, dict):
+        out = {k: vllm_schema(v) for k, v in schema.items()}
+        if isinstance(out.get("type"), list):
+            out["anyOf"] = [{"type": t} for t in out.pop("type")]
+        return out
+    if isinstance(schema, list):
+        return [vllm_schema(v) for v in schema]
+    return schema
+
+
 class LLMUnavailableError(RuntimeError):
     """LLM endpoint unreachable or kept returning invalid JSON (API: 503 LLM_UNAVAILABLE)."""
 
@@ -84,7 +97,7 @@ class LLMClient:
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         }
         if self.guided_json:
-            body["guided_json"] = schema
+            body["guided_json"] = vllm_schema(schema)
         else:
             body["response_format"] = {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}
         last_error: Exception | None = None

@@ -17,6 +17,7 @@ failures: one row per wrong field; the value reason wins, otherwise bbox_unmappe
 import argparse
 import csv
 import json
+import os
 import statistics
 import sys
 import tempfile
@@ -241,13 +242,20 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--extractor", choices=["rule", "llm"], default="rule")
     ap.add_argument("--llm-url", default="http://localhost:11434/v1")
     ap.add_argument("--llm-model", default="qwen2.5:7b")
+    ap.add_argument("--llm-key", default=None, help="API key of the LLM server (default: LLM_API_KEY env)")
+    ap.add_argument("--guided-json", action="store_true", default=None, help="vLLM guided_json (default: LLM_GUIDED_JSON=1 env)")
     ap.add_argument("--ocr-engine", default=None, help="auto | paddle | tesseract | paddle_vl (default: OCR_ENGINE env / auto)")
     ap.add_argument("--limit", type=int, default=None, help="evaluate only the first N docs (sorted by file name)")
     ap.add_argument("--out", type=Path, default=None, help="default: eval/out/<gold dir name>-<extractor>")
     args = ap.parse_args(argv)
 
     if args.extractor == "llm":
-        llm = LLMClient(args.llm_url, args.llm_model)
+        llm = LLMClient(
+            args.llm_url,
+            args.llm_model,
+            args.llm_key if args.llm_key is not None else os.getenv("LLM_API_KEY", ""),
+            guided_json=args.guided_json if args.guided_json is not None else os.getenv("LLM_GUIDED_JSON") == "1",
+        )
         extractor, model = llm_extractor(llm), args.llm_model
     else:
         extractor, model = rule_extractor, "rule-based-v2"

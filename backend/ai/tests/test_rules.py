@@ -198,3 +198,13 @@ def test_fallback_engine_uses_cpu_when_the_gpu_server_is_down(fail):
     assert engine.source == ("tesseract" if fail else "paddle")
     engine.run(img)
     assert engine.remote.calls == 1 if fail else 2  # down -> not retried within RETRY_AFTER
+
+
+def test_vllm_schema_uses_anyof_for_nullable_types():
+    from ai.extract import SCHEMA
+    from ai.llm import vllm_schema
+
+    out = vllm_schema(SCHEMA)
+    field = out["$defs"]["field"]["properties"]["raw_value"]
+    assert field == {"anyOf": [{"type": "string"}, {"type": "null"}]}
+    assert SCHEMA["$defs"]["field"]["properties"]["raw_value"] == {"type": ["string", "null"]}  # shared schema untouched
