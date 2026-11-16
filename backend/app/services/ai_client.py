@@ -227,11 +227,21 @@ def extract_contract_fields(ocr_lines: list[OcrLineDict]) -> list[ExtractionFiel
     return extract_contract_fields_with_meta(ocr_lines)[0]
 
 
+_HANGUL_RE = re.compile(r"[가-힣]")
+MIN_HANGUL_RATIO = 0.1  # 한글 서식 라벨이 없는 문서(영문 계약서 등): v2 라벨 사전이 한글뿐이라 8개 항목을 모두 놓침
+
+
+def _is_hangul_document(ocr_lines: list[OcrLineDict]) -> bool:
+    letters = [c for ln in ocr_lines for c in ln["text"] if c.isalpha()]
+    return bool(letters) and sum(bool(_HANGUL_RE.match(c)) for c in letters) / len(letters) >= MIN_HANGUL_RATIO
+
+
 def _extract_rule_based(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:
-    """GPU·API 없는 환경의 추출: 라벨–값 짝(표 셀·'라벨 : 값'·다음 줄·서명란 역할)으로 찾는다 (ai/extract/rules.py)."""
+    """GPU·API 없는 환경의 추출: 라벨–값 짝(표 셀·'라벨 : 값'·다음 줄·서명란 역할)으로 찾는다 (ai/extract/rules.py).
+    한글이 거의 없는 문서는 영문 키워드도 아는 v1으로 처리한다."""
     from ai.extract.rules import extract_rule_based  # noqa: PLC0415
 
-    return extract_rule_based(ocr_lines)
+    return extract_rule_based(ocr_lines) if _is_hangul_document(ocr_lines) else _extract_rule_based_v1(ocr_lines)
 
 
 def _extract_rule_based_v1(ocr_lines: list[OcrLineDict]) -> list[ExtractionFieldDict]:

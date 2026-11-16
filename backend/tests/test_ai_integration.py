@@ -53,6 +53,16 @@ def test_only_passed_doc_rules_run():
     assert ai_client.detect_risks(lines, [], []) == []
 
 
+def test_rule_extractor_routes_by_document_language():
+    def lines(texts):
+        return [{"page_no": 1, "line_id": f"L1-{i}", "text": t, "bbox": [0, 0, 1, 1], "confidence": 1.0, "source": "pdf_text", "table_cell": None} for i, t in enumerate(texts, 1)]
+
+    english = {f["field_code"]: f["raw_value"] for f in ai_client._extract_rule_based(lines(CONTRACT_LINES))}
+    assert english["contract_amount"] and english["creditor_biz_no"]  # v2's label table is Korean only; v1 knows "Contract Amount"
+    korean = {f["field_code"]: f["raw_value"] for f in ai_client._extract_rule_based(lines(["물품구매계약서", "1. 계약건명 : 정수장 노후관 교체", "2. 계약금액 : 금 일억원정 (￦100,000,000)"]))}
+    assert korean["contract_name"] == "정수장 노후관 교체" and "100,000,000" in korean["contract_amount"]
+
+
 def test_db_llm_cache_stores_and_reuses_responses(client, monkeypatch):
     calls = []
 
